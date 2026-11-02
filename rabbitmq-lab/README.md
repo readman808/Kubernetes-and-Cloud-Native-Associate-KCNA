@@ -25,7 +25,7 @@ Requires: docker, kind, kubectl, bash (Mac, Linux, or Windows via WSL). About 4 
 
 Cluster layout: StatefulSet `rabbitmq` (pods `rabbitmq-0/1/2`, container `rabbitmq`), headless Service `rabbitmq-headless`, client Service `rabbitmq` (5672 AMQP, 15672 management), Kubernetes peer discovery, PVC per pod. Management login: `admin` / `labpass123`.
 
-**See [RUNBOOK.md](RUNBOOK.md)** for the facilitator guide, answer key, command cheat sheets, and a real-world RabbitMQ-on-Kubernetes incident playbook.
+**See [RUNBOOK.html](RUNBOOK.html)** (open in any browser; same content as [RUNBOOK.md](RUNBOOK.md)) for the facilitator guide, answer key, command cheat sheets, and a real-world RabbitMQ-on-Kubernetes incident playbook.
 
 Scoring idea: 3 points per scenario, minus 1 per hint, fastest time breaks ties (`check` prints elapsed time).
 Add a scenario: `scenarios/<name>/` with `brief.md` (first line `# Title`), `setup.sh`, `check.sh` (exit 0 when fixed), `hints.txt`, `solution.md`. Shared helpers: `base/lib.sh`; healthy cluster: `base/up.sh`.

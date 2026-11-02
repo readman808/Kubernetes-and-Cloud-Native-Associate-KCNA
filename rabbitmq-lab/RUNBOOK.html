@@ -1,0 +1,276 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RabbitMQ Troubleshooting Lab Runbook</title><style>
+:root{--bg:#fff;--fg:#1f2328;--mut:#59636e;--bd:#d1d9e0;--code:#f3f4f6;--acc:#ff6600;--th:#f6f8fa}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1115;--fg:#e6e8eb;--mut:#9aa4b0;--bd:#2d333b;--code:#1a1e25;--th:#161a20}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.wrap{max-width:980px;margin:0 auto;padding:24px 16px 80px}
+h1{font-size:1.9rem;border-bottom:3px solid var(--acc);padding-bottom:.4rem}
+h1:not(:first-of-type){margin-top:3rem}h2{margin-top:2.2rem;border-bottom:1px solid var(--bd);padding-bottom:.25rem}h3{margin-top:1.6rem}
+a{color:var(--acc)}code{background:var(--code);padding:.1em .35em;border-radius:4px;font:.88em ui-monospace,Menlo,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--bd);border-radius:8px;padding:12px 14px;overflow:auto}pre code{background:none;padding:0}
+.tw{overflow-x:auto;margin:1rem 0}table{border-collapse:collapse;width:100%;font-size:.93rem}
+th,td{border:1px solid var(--bd);padding:6px 10px;text-align:left;vertical-align:top}th{background:var(--th)}
+hr{border:0;border-top:1px solid var(--bd);margin:2rem 0}
+.top{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--bd);padding:8px 16px;font-size:.9rem;z-index:2}
+.top a{margin-right:14px;text-decoration:none}
+@media print{.top{display:none}pre,table{break-inside:avoid}}
+</style></head><body><div class="top"><strong>RabbitMQ Lab</strong> &nbsp; <a href="#part-a-running-the-lab">Part A: Running the lab</a><a href="#a4-answer-key">Answer key</a><a href="#a6-command-cheat-sheet">Cheat sheet</a><a href="#part-b-real-world-playbook-rabbitmq-on-kubernetes">Part B: Playbook</a></div><main class="wrap"><h1 id="runbook-rabbitmq-troubleshooting-lab-and-rabbitmq-on-kubernetes">Runbook: RabbitMQ Troubleshooting Lab (and RabbitMQ on Kubernetes)</h1>
+<p>Part A is for the facilitator and players running the game. Part B is a real-world incident playbook that each scenario is modelled on, so the lab doubles as training for the on-call rotation.</p>
+<hr />
+<h1 id="part-a-running-the-lab">Part A: Running the lab</h1>
+<h2 id="a1-prerequisites-each-player">A1. Prerequisites (each player)</h2>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Check</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Docker</td>
+<td><code>docker ps</code></td>
+<td>Must be running; 4 GB RAM free recommended (3 RabbitMQ nodes + kind).</td>
+</tr>
+<tr>
+<td>kind</td>
+<td><code>kind version</code></td>
+<td>https://kind.sigs.k8s.io</td>
+</tr>
+<tr>
+<td>kubectl</td>
+<td><code>kubectl version --client</code></td>
+<td></td>
+</tr>
+<tr>
+<td>bash</td>
+<td></td>
+<td>Mac, Linux, or Windows via WSL.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Internet is needed on first run to pull <code>kindest/node</code>, <code>rabbitmq:3.13-management</code>, <code>pivotalrabbitmq/perf-test</code>, <code>curlimages/curl</code>, <code>busybox</code>. Pre-pull before a workshop, as the first start takes a few minutes.</p>
+<h2 id="a2-get-the-lab">A2. Get the lab</h2>
+<pre><code>git clone https://github.com/readman808/Kubernetes-and-Cloud-Native-Associate-KCNA.git
+cd Kubernetes-and-Cloud-Native-Associate-KCNA
+git checkout ccr-f5e73947-98zk6e     # until merged to main
+cd rabbitmq-lab
+</code></pre>
+<h2 id="a3-session-flow-facilitator">A3. Session flow (facilitator)</h2>
+<ol>
+<li><code>./lab.sh list</code>, pick a scenario. Suggested order: service-no-endpoints, vhost-permissions, queue-backlog, memory-alarm, quota-quorum-loss, erlang-cookie (about 10-25 min each).</li>
+<li>Each player runs <code>./lab.sh start &lt;scenario&gt;</code> on their own machine (cluster <code>rabbitmq-lab</code>, namespace <code>lab</code>). The brief is printed: that is the page.</li>
+<li>Start the timer. Players use only <code>kubectl</code> and commands run inside the pods (<code>kubectl exec rabbitmq-0 -- rabbitmqctl ...</code>).</li>
+<li><code>./lab.sh check</code> when they believe it is fixed. It reports what is still wrong. PASS prints elapsed time and hints used.</li>
+<li>Hints: <code>./lab.sh hint</code> (-1 point each, four per scenario, from gentle to explicit). <code>./lab.sh solution</code> forfeits the scenario.</li>
+<li>Scoring: 3 points per solved scenario, -1 per hint, fastest time breaks ties.</li>
+<li>Debrief (5 min): What was the first command? Which signal pointed at the cause? How would we detect this in production before users did? What alert or guardrail would prevent it?</li>
+</ol>
+<p>Every start tears down namespace <code>lab</code> and rebuilds, so scenarios can be replayed. The first <code>start</code> of a session creates the kind cluster; <code>./lab.sh stop</code> deletes it.</p>
+<h2 id="a4-answer-key">A4. Answer key</h2>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>What the player sees</th>
+<th>Root cause</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>service-no-endpoints</td>
+<td>orders-app: <code>amqp connect FAILED</code>; <code>kubectl get endpoints rabbitmq</code> is <code>&lt;none&gt;</code></td>
+<td>Service selector <code>app: rabbit-mq</code>; management targetPort 15673</td>
+<td>Patch selector to <code>app=rabbitmq</code>, targetPort to 15672</td>
+</tr>
+<tr>
+<td>vhost-permissions</td>
+<td>producer CrashLoopBackOff; log <code>NOT_ALLOWED - access to vhost 'prod' refused for user 'orders-svc'</code></td>
+<td>User has permissions on <code>/</code> only</td>
+<td><code>rabbitmqctl set_permissions -p prod orders-svc ".*" ".*" ".*"</code> + restart producer</td>
+</tr>
+<tr>
+<td>queue-backlog</td>
+<td><code>orders</code> queue: messages rising, 0 consumers; consumer log <code>ACCESS_REFUSED</code></td>
+<td>Consumer password typo (<code>AppPass</code> vs <code>AppPass1</code>)</td>
+<td><code>kubectl set env deploy/consumer RMQ_PASS=AppPass1</code></td>
+</tr>
+<tr>
+<td>memory-alarm</td>
+<td><code>rabbitmq-diagnostics alarms</code> on all nodes; connections <code>blocked</code></td>
+<td><code>vm_memory_high_watermark.absolute = 20MB</code> in ConfigMap</td>
+<td>Runtime <code>set_vm_memory_high_watermark 0.4</code> x3, durable: fix ConfigMap + <code>rollout restart sts/rabbitmq</code></td>
+</tr>
+<tr>
+<td>quota-quorum-loss</td>
+<td>Only rabbitmq-0 exists; sts event <code>exceeded quota: lab-quota</code>; quorum queue <code>payments</code> has no majority</td>
+<td>ResourceQuota <code>pods: 1</code> blocks pod re-creation</td>
+<td>Raise/delete quota; pods rejoin from existing PVCs; do not delete PVCs</td>
+</tr>
+<tr>
+<td>erlang-cookie</td>
+<td>rabbitmq-2 never Ready; cluster_status shows it down</td>
+<td>Secret cookie changed; only the new pod picked it up</td>
+<td>Restore the old cookie in the Secret, <code>kubectl delete pod rabbitmq-2</code>; do not restart 0/1</td>
+</tr>
+</tbody>
+</table></div>
+<p>Full step-by-step commands are in each <code>scenarios/&lt;name&gt;/solution.md</code>.</p>
+<h2 id="a5-generic-troubleshooting-method-teach-this">A5. Generic troubleshooting method (teach this)</h2>
+<ol>
+<li><strong>Kubernetes layer first</strong>: <code>kubectl get pods -o wide</code>, <code>kubectl describe pod/sts/svc</code>, <code>kubectl get events --sort-by=.lastTimestamp</code>. Is anything Pending, restarting, not Ready, or missing?</li>
+<li><strong>Wiring</strong>: Service selectors vs pod labels, <code>kubectl get endpoints</code>, ports, Secrets/ConfigMaps, RBAC, quotas.</li>
+<li><strong>Logs</strong>: <code>kubectl logs &lt;pod&gt; [--previous]</code> for both RabbitMQ and the client apps. Brokers explain refusals (<code>ACCESS_REFUSED</code>, <code>NOT_ALLOWED</code>) precisely.</li>
+<li><strong>Broker layer</strong>: cluster membership, alarms, queues, connections, permissions (cheat sheet below).</li>
+<li>Change one thing, re-check, and write down what you changed.</li>
+<li>Prefer fixes that survive a restart (ConfigMap/Secret/manifest) over runtime-only changes, or at least say which one you used.</li>
+</ol>
+<h2 id="a6-command-cheat-sheet">A6. Command cheat sheet</h2>
+<p>Shorthand: <code>R="kubectl exec rabbitmq-0 -c rabbitmq --"</code> then <code>$R &lt;command&gt;</code>.</p>
+<p><strong>Kubernetes</strong>
+| Goal | Command |
+|---|---|
+| Pods, nodes, IPs | <code>kubectl get pods -o wide</code> |
+| Why is it not starting | <code>kubectl describe pod rabbitmq-1</code> |
+| Controller problems | <code>kubectl describe sts rabbitmq</code>, <code>kubectl get events --sort-by=.lastTimestamp</code> |
+| Logs (current / crashed) | <code>kubectl logs rabbitmq-1</code>, <code>kubectl logs rabbitmq-1 --previous</code> |
+| Who backs a Service | <code>kubectl get endpoints rabbitmq</code>, <code>kubectl get svc rabbitmq -o yaml</code> |
+| Labels | <code>kubectl get pods --show-labels</code> |
+| Quotas | <code>kubectl get resourcequota</code>, <code>kubectl describe resourcequota</code> |
+| Env of a workload | <code>kubectl get deploy consumer -o jsonpath='{.spec.template.spec.containers[0].env}'</code> |
+| Edit then roll | <code>kubectl set env ...</code>, <code>kubectl rollout restart sts/rabbitmq</code>, <code>kubectl rollout status sts/rabbitmq</code> |
+| Decode a Secret | <code>kubectl get secret rabbitmq-secret -o jsonpath='{.data.password}' \| base64 -d</code> |
+| Management UI | <code>kubectl port-forward svc/rabbitmq 15672</code> then http://localhost:15672 (admin / labpass123) |</p>
+<p><strong>RabbitMQ (inside a pod)</strong>
+| Goal | Command |
+|---|---|
+| Is the node alive | <code>rabbitmq-diagnostics ping</code>, <code>rabbitmq-diagnostics status</code> |
+| Cluster membership | <code>rabbitmqctl cluster_status</code> |
+| Alarms (memory / disk) | <code>rabbitmq-diagnostics alarms</code>, <code>rabbitmq-diagnostics check_local_alarms</code> |
+| Memory breakdown | <code>rabbitmq-diagnostics memory_breakdown</code> |
+| Queues | <code>rabbitmqctl list_queues name type messages consumers</code>; quorum: <code>... name type members online leader</code> |
+| Connections / channels | <code>rabbitmqctl list_connections name user vhost state</code>, <code>rabbitmqctl list_channels</code> |
+| Users and vhosts | <code>rabbitmqctl list_users</code>, <code>rabbitmqctl list_vhosts</code> |
+| Permissions | <code>rabbitmqctl list_permissions -p &lt;vhost&gt;</code>, <code>rabbitmqctl list_user_permissions &lt;user&gt;</code> |
+| Grant permission | <code>rabbitmqctl set_permissions -p &lt;vhost&gt; &lt;user&gt; ".*" ".*" ".*"</code> |
+| Change a password | <code>rabbitmqctl change_password &lt;user&gt; &lt;new&gt;</code> |
+| Runtime watermark | <code>rabbitmqctl set_vm_memory_high_watermark 0.4</code> (lost on restart) |
+| Quorum risk before maintenance | <code>rabbitmq-queues check_if_node_is_quorum_critical</code> |
+| Effective config | <code>rabbitmqctl environment</code>, <code>rabbitmqctl eval 'application:get_all_env(rabbit).'</code> |
+| Cookie in use | <code>cat /var/lib/rabbitmq/.erlang.cookie</code> |</p>
+<h2 id="a7-troubleshooting-the-lab-itself">A7. Troubleshooting the lab itself</h2>
+<div class="tw"><table>
+<thead>
+<tr>
+<th>Problem</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Missing required tool</code></td>
+<td>Install the named tool.</td>
+</tr>
+<tr>
+<td>Cannot connect to Docker daemon</td>
+<td>Start Docker Desktop / <code>systemctl start docker</code>.</td>
+</tr>
+<tr>
+<td><code>start</code> seems stuck on "Starting 3-node RabbitMQ cluster"</td>
+<td>First run pulls images; watch <code>kubectl get pods -w</code> in another terminal. If pods are <code>Pending</code>, check Docker has at least 4 GB RAM.</td>
+</tr>
+<tr>
+<td>PVC <code>Pending</code></td>
+<td>kind needs its default <code>standard</code> StorageClass: <code>kubectl get sc</code>. Recreate the cluster: <code>./lab.sh stop &amp;&amp; ./lab.sh start &lt;s&gt;</code>.</td>
+</tr>
+<tr>
+<td><code>kubectl exec</code> says container not found</td>
+<td>Add <code>-c rabbitmq</code> (pods have one container, but the name must match if you pass it).</td>
+</tr>
+<tr>
+<td>Wrong cluster / namespace</td>
+<td><code>kubectl config use-context kind-rabbitmq-lab</code>; <code>kubectl config set-context --current --namespace=lab</code>.</td>
+</tr>
+<tr>
+<td><code>check</code> fails right after the fix</td>
+<td>Pods may still be rolling: <code>kubectl rollout status sts/rabbitmq</code>; restarted pods take about 30-60 s to be Ready. Crash-looping apps back off up to 5 min: <code>kubectl rollout restart deploy/&lt;name&gt;</code>.</td>
+</tr>
+<tr>
+<td>Want to restart a scenario</td>
+<td><code>./lab.sh start &lt;scenario&gt;</code> again.</td>
+</tr>
+<tr>
+<td>Port 15672 busy on port-forward</td>
+<td>Use <code>kubectl port-forward svc/rabbitmq 15673:15672</code>.</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="a8-cleanup">A8. Cleanup</h2>
+<p><code>./lab.sh stop</code> deletes the kind cluster and local state; verify with <code>kind get clusters</code>.</p>
+<h2 id="a9-extending-the-lab">A9. Extending the lab</h2>
+<p>Create <code>scenarios/&lt;name&gt;/</code>: <code>brief.md</code> (first line <code># Title</code>), <code>setup.sh</code> (source <code>base/lib.sh</code>, run <code>base/up.sh</code>, then break something), <code>check.sh</code> (exit 0 when fixed, use <code>fail "reason"</code> otherwise), <code>hints.txt</code> (one hint per line, gentle to explicit), <code>solution.md</code>. Validate: start, confirm <code>check</code> FAILS, apply the solution, confirm <code>check</code> PASSES. Ideas not yet built: peer-discovery RBAC removed, disk alarm (<code>disk_free_limit</code>), network partition with <code>pause_minority</code>, dead-letter loop, connection/channel leak, TLS listener misconfig.</p>
+<h2 id="a10-known-limitations">A10. Known limitations</h2>
+<p>The scripts were syntax-checked and the generated manifests validated, but <strong>have not yet been run against a live cluster</strong> (the authoring environment had no Docker). Do one dry run of every scenario before the team session (A9 validation steps) and fix any image-tag or timing assumptions. Expected tweaks: PerfTest flags/image tag (<code>pivotalrabbitmq/perf-test:latest</code> is unpinned), sleeps in <code>setup.sh</code>, and rollout timeouts on slow machines. Credentials here (<code>admin/labpass123</code>, cookie in a plain Secret) are for lab use only.</p>
+<hr />
+<h1 id="part-b-real-world-playbook-rabbitmq-on-kubernetes">Part B: Real-world playbook, RabbitMQ on Kubernetes</h1>
+<p>Facts to know about this deployment (and most StatefulSet-based RabbitMQ setups): nodes are <code>rabbit@&lt;pod&gt;.rabbitmq-headless.&lt;ns&gt;.svc.cluster.local</code>; peers find each other via the Kubernetes API (needs RBAC <code>get endpoints</code>); each node keeps data on its PVC; the Erlang cookie is read at node start; <code>podManagementPolicy: Parallel</code> lets all nodes start together; <code>cluster_partition_handling = pause_minority</code> favours consistency.</p>
+<h2 id="b1-clients-cannot-connect-no-endpoints-wrong-ports">B1. Clients cannot connect (no endpoints / wrong ports)</h2>
+<ul>
+<li><strong>Symptoms</strong>: <code>connection refused</code> / timeouts to <code>rabbitmq:5672</code>; UI unreachable.</li>
+<li><strong>Check</strong>: <code>kubectl get endpoints rabbitmq</code>; compare <code>spec.selector</code> with pod labels; compare target ports with container ports; are pods Ready (readiness gates endpoints)?</li>
+<li><strong>Fix</strong>: correct selector/targetPort. <strong>Prevent</strong>: manage Services in the same chart as the StatefulSet; add a synthetic AMQP connect check.</li>
+</ul>
+<h2 id="b2-access-refused-authentication-vs-authorization">B2. Access refused (authentication vs authorization)</h2>
+<ul>
+<li><strong>Symptoms</strong>: <code>ACCESS_REFUSED - Login was refused</code> (bad user/password) vs <code>NOT_ALLOWED - access to vhost ... refused</code> or <code>ACCESS_REFUSED - access to queue/exchange ... refused</code> (authorization).</li>
+<li><strong>Check</strong>: client logs; <code>rabbitmqctl list_users</code>, <code>list_vhosts</code>, <code>list_user_permissions &lt;user&gt;</code>; verify the exact vhost in the URI.</li>
+<li><strong>Fix</strong>: <code>set_permissions</code> per vhost with least-privilege regexes; fix credentials in a Secret and roll the app. <strong>Prevent</strong>: provision users/vhosts declaratively (definitions import, Messaging Topology Operator).</li>
+</ul>
+<h2 id="b3-queue-growing-no-consumers">B3. Queue growing, no consumers</h2>
+<ul>
+<li><strong>Symptoms</strong>: <code>messages_ready</code> climbing, <code>consumers = 0</code>, rising memory, eventually alarms.</li>
+<li><strong>Check</strong>: <code>rabbitmqctl list_queues name messages_ready messages_unacknowledged consumers</code>; consumer pod status and logs (auth, DNS, crash-loops); unacked high with few consumers means slow/stuck handlers or too large prefetch.</li>
+<li><strong>Fix</strong>: restore consumers; scale consumers; as a last resort <code>rabbitmqctl purge_queue &lt;q&gt;</code> (data loss, needs approval). <strong>Prevent</strong>: alert on <code>consumers == 0</code> and on queue depth/age; set <code>max-length</code>/<code>message-ttl</code>/dead-lettering.</li>
+</ul>
+<h2 id="b4-memory-or-disk-alarm-publishers-blocked">B4. Memory or disk alarm (publishers blocked)</h2>
+<ul>
+<li><strong>Symptoms</strong>: connections <code>blocked</code>/<code>blocking</code>; UI red alarm badge; publishers hang while consumers still work.</li>
+<li><strong>Check</strong>: <code>rabbitmq-diagnostics alarms</code>, <code>memory_breakdown</code>, <code>rabbitmqctl list_connections name state</code>; watermark config; pod memory vs limit (<code>kubectl top pod</code>), PVC usage.</li>
+<li><strong>Fix</strong>: drain the backlog or add consumers (alarm clears itself when usage drops); correct watermark/<code>disk_free_limit</code>; raise the pod memory limit and PVC if genuinely undersized. Runtime <code>set_vm_memory_high_watermark</code> is temporary; make the durable change in ConfigMap and <code>kubectl rollout restart sts/rabbitmq</code> (ConfigMaps are not hot-reloaded). Keep the watermark well below the container limit (default 0.4) so the kernel does not OOM-kill the pod.</li>
+<li><strong>Prevent</strong>: alerts at 70-80% of the watermark and on free disk; per-queue limits.</li>
+</ul>
+<h2 id="b5-pod-will-not-recreate-quota-scheduling-storage">B5. Pod will not (re)create (quota, scheduling, storage)</h2>
+<ul>
+<li><strong>Symptoms</strong>: StatefulSet shows fewer pods than desired; no pod to describe.</li>
+<li><strong>Check</strong>: <code>kubectl describe sts</code>, <code>kubectl get events --sort-by=.lastTimestamp</code>; <code>kubectl get resourcequota,limitrange</code>; Pending pods: <code>describe pod</code> (Insufficient cpu/memory, unbound PVC, taints, affinity).</li>
+<li><strong>Fix</strong>: remove the blocker. <strong>Never delete PVCs</strong> to "unstick" a pod, and never <code>forget_cluster_node</code> for a node that will come back. <strong>Prevent</strong>: quota headroom of at least one extra pod for rollouts; PodDisruptionBudget (<code>maxUnavailable: 1</code>); alert on <code>readyReplicas &lt; replicas</code>.</li>
+</ul>
+<h2 id="b6-lost-quorum-quorum-queues-majority">B6. Lost quorum (quorum queues / majority)</h2>
+<ul>
+<li><strong>Rule</strong>: a quorum queue or a 3-node cluster with <code>pause_minority</code> needs 2 of 3 nodes. With 1 of 3, quorum queues are unavailable and the lone node may pause.</li>
+<li><strong>Check</strong>: <code>rabbitmqctl cluster_status</code>, <code>list_queues name type members online leader</code>; <code>rabbitmq-queues check_if_node_is_quorum_critical</code> <strong>before</strong> any voluntary restart.</li>
+<li><strong>Fix</strong>: bring the missing nodes back with their data. Only if a node is gone for good: <code>rabbitmqctl forget_cluster_node</code>, then add a replacement and <code>rabbitmq-queues grow</code>. <strong>Prevent</strong>: one node at a time during maintenance; wait for Ready and cluster resync between nodes; PDB; spread pods across nodes/zones with anti-affinity.</li>
+</ul>
+<h2 id="b7-node-cannot-join-erlang-cookie-dns-ports">B7. Node cannot join (Erlang cookie, DNS, ports)</h2>
+<ul>
+<li><strong>Symptoms</strong>: pod not Ready; <code>Authentication failed (rejected by the remote node), please check the Erlang cookie</code>; <code>nodedown</code>; table-wait timeouts in logs.</li>
+<li><strong>Check</strong>: compare <code>cat /var/lib/rabbitmq/.erlang.cookie</code> across pods and against the Secret; <code>nslookup rabbitmq-0.rabbitmq-headless</code>; ports 4369 (epmd) and 25672 (distribution) reachable; peer-discovery RBAC (<code>kubectl auth can-i get endpoints --as=system:serviceaccount:&lt;ns&gt;:rabbitmq</code>); hostname suffix env vars.</li>
+<li><strong>Fix</strong>: make the cookie identical everywhere. Changing a cookie requires a coordinated restart of <strong>all</strong> nodes (downtime window); never change the Secret and bounce a single node.</li>
+<li><strong>Prevent</strong>: treat the cookie as immutable; protect the Secret; document rotation as a planned outage.</li>
+</ul>
+<h2 id="b8-network-partition">B8. Network partition</h2>
+<ul>
+<li><strong>Symptoms</strong>: nodes see each other as down; with <code>pause_minority</code>, the minority side pauses. After healing, <code>partition</code> shows in <code>cluster_status</code>.</li>
+<li><strong>Fix</strong>: restore network connectivity (CNI, NetworkPolicy, node issues); minority nodes resume automatically. With <code>ignore</code>/<code>autoheal</code> strategies, inspect for diverged data before choosing a side. <strong>Prevent</strong>: keep <code>pause_minority</code>; alert on partitions.</li>
+</ul>
+<h2 id="b9-safe-maintenance-checklist">B9. Safe maintenance checklist</h2>
+<ol>
+<li><code>kubectl get pods</code> all Ready; <code>rabbitmqctl cluster_status</code> shows 3 running nodes; no alarms.</li>
+<li><code>rabbitmq-queues check_if_node_is_quorum_critical</code> on the node about to restart.</li>
+<li>Restart one pod (or <code>rollout restart</code>, which goes in reverse ordinal order); wait for Ready and for the node to appear in <code>cluster_status</code>.</li>
+<li>Re-check queues (<code>online</code>, <code>leader</code>) before touching the next node.</li>
+<li>Record what changed; keep PVCs intact.</li>
+</ol>
+<h2 id="b10-escalation">B10. Escalation</h2>
+<p>Collect before escalating: <code>kubectl get pods,sts,svc,endpoints,pvc,events -o wide</code>, <code>kubectl logs</code> of every RabbitMQ pod (and <code>--previous</code>), <code>rabbitmqctl cluster_status</code>, <code>rabbitmq-diagnostics alarms</code>, <code>rabbitmqctl list_queues name type messages consumers members online</code>, and a <code>rabbitmqctl report</code> output from a healthy node.</p></main></body></html>
