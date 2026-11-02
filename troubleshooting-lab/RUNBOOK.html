@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Troubleshooting Lab Runbook</title>
+  <style>
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      background-color: #1a1a1a;
+      border: none;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+  <style>
+  :root{--bg:#fff;--fg:#1d2733;--mut:#5b6b7b;--line:#d9e0e7;--code:#f2f5f8;--acc:#326ce5}
+  @media (prefers-color-scheme:dark){:root{--bg:#10151b;--fg:#e4e9ee;--mut:#9aa8b6;--line:#2a3541;--code:#1a222b;--acc:#6f9bff}}
+  body{background:var(--bg);color:var(--fg);font:16px/1.6 system-ui,sans-serif;max-width:900px;margin:0 auto;padding:24px 16px}
+  h1{border-bottom:3px solid var(--acc);padding-bottom:8px}h2{margin-top:2em;border-bottom:1px solid var(--line);padding-bottom:4px}
+  code,pre{background:var(--code);border-radius:4px;font-size:.9em}code{padding:1px 5px}pre{padding:12px;overflow-x:auto}pre code{padding:0}
+  table{border-collapse:collapse;display:block;overflow-x:auto}th,td{border:1px solid var(--line);padding:6px 10px;text-align:left;vertical-align:top}th{background:var(--code)}
+  a{color:var(--acc)}
+  </style>
+</head>
+<body>
+<h1 id="runbook-kubernetes-troubleshooting-lab">Runbook: Kubernetes
+Troubleshooting Lab</h1>
+<p>Audience: team lead (facilitator) and players. Covers setup, running
+a session, per-scenario solutions, troubleshooting the lab itself, and
+cleanup.</p>
+<h2 id="1-prerequisites-each-player">1. Prerequisites (each player)</h2>
+<table>
+<thead>
+<tr class="header">
+<th>Tool</th>
+<th>Check</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Docker</td>
+<td><code>docker ps</code></td>
+<td>Must be running. 4 GB RAM free recommended.</td>
+</tr>
+<tr class="even">
+<td>kind</td>
+<td><code>kind version</code></td>
+<td><a href="https://kind.sigs.k8s.io">https://kind.sigs.k8s.io</a></td>
+</tr>
+<tr class="odd">
+<td>kubectl</td>
+<td><code>kubectl version --client</code></td>
+<td></td>
+</tr>
+<tr class="even">
+<td>Helm</td>
+<td><code>helm version</code></td>
+<td>Only for <code>helm-tls</code>.</td>
+</tr>
+<tr class="odd">
+<td>bash</td>
+<td></td>
+<td>Mac, Linux, or Windows via WSL.</td>
+</tr>
+</tbody>
+</table>
+<p>Internet is needed on first run to pull images (nginx, busybox, curl,
+hashicorp/vault, kindest/node).</p>
+<h2 id="2-get-the-lab">2. Get the lab</h2>
+<pre><code>git clone https://github.com/readman808/Kubernetes-and-Cloud-Native-Associate-KCNA.git
+cd Kubernetes-and-Cloud-Native-Associate-KCNA
+git checkout ccr-bbc8cff8-5h01sl     # until merged to main
+cd troubleshooting-lab</code></pre>
+<p>Or unzip <code>troubleshooting-lab.zip</code>.</p>
+<h2 id="3-running-a-session-facilitator">3. Running a session
+(facilitator)</h2>
+<ol type="1">
+<li>Pick a scenario: <code>./lab.sh list</code>.</li>
+<li>Each player runs <code>./lab.sh start &lt;scenario&gt;</code> on
+their own machine (creates cluster <code>kcna-lab</code>, namespace
+<code>lab</code>).</li>
+<li>Start the timer. Players investigate with kubectl/helm/vault
+only.</li>
+<li>Player runs <code>./lab.sh check</code> when they believe it is
+fixed. PASS ends their run.</li>
+<li>Hints: <code>./lab.sh hint</code> (each use = -1 point).
+<code>./lab.sh solution</code> = scenario forfeited.</li>
+<li>Scoring: 3 points per solved scenario, -1 per hint, fastest time
+breaks ties.</li>
+<li>Debrief: ask what the first command was, what signal pointed to the
+cause, how to prevent it.</li>
+</ol>
+<p>Recommended order: crashloop, imagepull, pending, service-selector,
+vault-secrets, helm-tls (easy to hard, about 10-20 min each).</p>
+<h2 id="4-scenario-answer-key">4. Scenario answer key</h2>
+<table>
+<thead>
+<tr class="header">
+<th>Scenario</th>
+<th>Symptom</th>
+<th>Diagnosis commands</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>crashloop</td>
+<td>CrashLoopBackOff</td>
+<td><code>kubectl get pods</code>,
+<code>kubectl logs &lt;pod&gt; --previous</code> ("DB_URL is
+required")</td>
+<td><code>kubectl set env deploy/checkout DB_URL=postgres://db:5432/app</code></td>
+</tr>
+<tr class="even">
+<td>imagepull</td>
+<td>ErrImagePull</td>
+<td><code>kubectl describe pod</code> (Events: tag not found)</td>
+<td><code>kubectl set image deploy/web nginx=nginx:1.27-alpine</code></td>
+</tr>
+<tr class="odd">
+<td>pending</td>
+<td>Pending</td>
+<td><code>kubectl describe pod</code> (Insufficient cpu/memory)</td>
+<td><code>kubectl set resources deploy/worker --requests=cpu=100m,memory=64Mi</code></td>
+</tr>
+<tr class="even">
+<td>service-selector</td>
+<td>No endpoints</td>
+<td><code>kubectl get endpoints api</code>,
+<code>kubectl get pods --show-labels</code>,
+<code>kubectl get svc api -o yaml</code></td>
+<td>Patch selector to <code>app=api</code> and targetPort to 80</td>
+</tr>
+<tr class="odd">
+<td>vault-secrets</td>
+<td>App logs "cannot reach" then "no secret"</td>
+<td><code>kubectl logs deploy/billing</code>,
+<code>kubectl get svc</code></td>
+<td><code>kubectl set env deploy/billing VAULT_ADDR=http://vault:8200</code>,
+then
+<code>kubectl exec deploy/vault -- env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=root vault kv put secret/billing api_key=abc123</code></td>
+</tr>
+<tr class="even">
+<td>helm-tls</td>
+<td>ContainerCreating</td>
+<td><code>kubectl describe pod</code> (secret "gateway-tls-v2" not
+found), <code>helm get values gateway -n lab</code></td>
+<td>Create secret <code>gateway-tls-v2</code> (openssl +
+<code>kubectl create secret tls</code>) or
+<code>helm upgrade ... --set tls.secretName=&lt;existing&gt;</code></td>
+</tr>
+</tbody>
+</table>
+<p>Full commands are in each
+<code>scenarios/&lt;name&gt;/solution.md</code>.</p>
+<h2 id="5-generic-troubleshooting-method-teach-this">5. Generic
+troubleshooting method (teach this)</h2>
+<ol type="1">
+<li><code>kubectl get pods -o wide</code> : what state?</li>
+<li><code>kubectl describe &lt;resource&gt;</code> : read Events at the
+bottom.</li>
+<li><code>kubectl logs &lt;pod&gt; [--previous]</code> : what does the
+app say?</li>
+<li><code>kubectl get events --sort-by=.lastTimestamp</code></li>
+<li>Check wiring: labels vs selectors, Service ports, env vars,
+Secrets/ConfigMaps exist.</li>
+<li>Change one thing, re-check.</li>
+</ol>
+<h2 id="6-troubleshooting-the-lab-itself">6. Troubleshooting the lab
+itself</h2>
+<table>
+<thead>
+<tr class="header">
+<th>Problem</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Missing required tool</code></td>
+<td>Install the named tool.</td>
+</tr>
+<tr class="even">
+<td>Cannot connect to Docker daemon</td>
+<td>Start Docker Desktop / <code>systemctl start docker</code>.</td>
+</tr>
+<tr class="odd">
+<td><code>kind create cluster</code> hangs or fails</td>
+<td>Free disk/RAM; <code>./lab.sh stop</code> then retry.</td>
+</tr>
+<tr class="even">
+<td>Wrong cluster targeted</td>
+<td><code>kubectl config use-context kind-kcna-lab</code>.</td>
+</tr>
+<tr class="odd">
+<td>Commands hit the wrong namespace</td>
+<td><code>kubectl config set-context --current --namespace=lab</code>.</td>
+</tr>
+<tr class="even">
+<td>Pods stuck pulling images</td>
+<td>Check network/proxy; <code>docker pull &lt;image&gt;</code> to
+test.</td>
+</tr>
+<tr class="odd">
+<td><code>check</code> fails right after fixing</td>
+<td>Wait for rollout:
+<code>kubectl rollout status deploy/&lt;name&gt;</code>.</td>
+</tr>
+<tr class="even">
+<td>Want to restart a scenario</td>
+<td><code>./lab.sh start &lt;scenario&gt;</code> again (it recreates
+namespace <code>lab</code>).</td>
+</tr>
+<tr class="odd">
+<td><code>helm required</code></td>
+<td>Install Helm, then restart helm-tls.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="7-cleanup">7. Cleanup</h2>
+<p><code>./lab.sh stop</code> deletes the kind cluster and local state.
+Verify with <code>kind get clusters</code>.</p>
+<h2 id="8-extending-the-lab">8. Extending the lab</h2>
+<p>Create <code>scenarios/&lt;name&gt;/</code> with
+<code>brief.md</code> (first line <code># Title</code>),
+<code>setup.sh</code> (apply broken state into namespace
+<code>lab</code>), <code>check.sh</code> (exit 0 when fixed),
+<code>hints.txt</code> (one hint per line, gentle to explicit),
+<code>solution.md</code>. Test: start, apply solution,
+<code>./lab.sh check</code> must PASS; before the fix it must fail.</p>
+<h2 id="9-known-limitations">9. Known limitations</h2>
+<p>Scripts were syntax-checked but not yet run against a live cluster.
+Report issues to the repo owner. Vault runs in dev mode (in-memory, root
+token <code>root</code>): lab use only.</p>
+</body>
+</html>
