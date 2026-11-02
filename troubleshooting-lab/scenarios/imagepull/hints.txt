@@ -1,0 +1,3 @@
+kubectl describe pod <pod> and read the Events section at the bottom.
+The tag does not exist. Which image field is wrong?
+Use kubectl set image or kubectl edit deploy web.

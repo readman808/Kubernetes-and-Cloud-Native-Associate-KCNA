@@ -1,0 +1,3 @@
+kubectl get pods, then look at the STATUS column.
+kubectl logs <pod> (add --previous if it already restarted).
+The app needs an environment variable. How do you set one on a Deployment?

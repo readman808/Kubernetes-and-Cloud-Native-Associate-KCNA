@@ -1,0 +1,5 @@
+kubectl get pods: check READY and RESTARTS. Then vault status (see the Sealed field).
+The keys are in Secret vault-init: kubectl get secret vault-init -o jsonpath='{.data.init\.txt}' | base64 -d
+Run vault operator unseal twice with two different Unseal Keys.
+It re-sealed because the container restarted. kubectl describe pod and read the Events: what is failing?
+The liveness probe checks port 8201 (cluster port) but the API listens on 8200. kubectl edit deploy vault, then unseal again after the rollout.

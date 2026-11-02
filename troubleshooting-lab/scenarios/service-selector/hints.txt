@@ -1,0 +1,3 @@
+kubectl get endpoints api: it is empty. Compare kubectl get pods --show-labels with the Service selector.
+The selector label does not match. Also check targetPort against what nginx listens on.
+kubectl edit svc api
