@@ -1,0 +1,4 @@
+Start with the symptom: `kubectl logs deploy/orders-app`, then ask which pods back the Service: `kubectl get endpoints rabbitmq`.
+Empty ENDPOINTS means the Service selector matches no pods. Compare `kubectl get svc rabbitmq -o yaml` (spec.selector) with `kubectl get pods --show-labels`.
+After the selector is fixed, look at the PORT numbers in `kubectl get endpoints rabbitmq`. RabbitMQ's management UI listens on 15672.
+Fix with: `kubectl edit svc rabbitmq` (selector app=rabbitmq, management targetPort 15672), then re-run `./lab.sh check`.

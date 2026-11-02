@@ -1,0 +1,4 @@
+`kubectl get pods,sts` - how many replicas exist vs desired? The StatefulSet controller reports its trouble as events: `kubectl describe sts rabbitmq` and `kubectl get events --sort-by=.lastTimestamp`.
+The event says pod creation is forbidden: "exceeded quota". List quotas: `kubectl get resourcequota` and `kubectl describe resourcequota`.
+Meanwhile see the RabbitMQ view: `kubectl exec rabbitmq-0 -- rabbitmqctl cluster_status` and `... rabbitmqctl list_queues name type members online leader`. With 1 of 3 members a quorum queue has no majority.
+Raise or remove the quota (`kubectl delete resourcequota lab-quota` or edit `spec.hard.pods`). The controller retries with back-off, so wait a minute or two; do NOT delete PVCs.

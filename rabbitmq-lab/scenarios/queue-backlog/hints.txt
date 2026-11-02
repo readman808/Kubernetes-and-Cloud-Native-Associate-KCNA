@@ -1,0 +1,4 @@
+Confirm the symptom in RabbitMQ: `kubectl exec rabbitmq-0 -- rabbitmqctl list_queues name messages consumers`. How many consumers does `orders` have?
+The consumer pod is the suspect: `kubectl get pods`, then `kubectl logs deploy/consumer`.
+ACCESS_REFUSED / "Login was refused" means bad credentials. Compare env of both apps: `kubectl get deploy producer consumer -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.spec.template.spec.containers[0].env}{"\n"}{end}'`.
+`kubectl set env deploy/consumer RMQ_PASS=<the password the producer uses>`; the Deployment rolls out by itself.

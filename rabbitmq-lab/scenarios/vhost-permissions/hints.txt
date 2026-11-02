@@ -1,0 +1,4 @@
+Read the error: `kubectl logs deploy/producer`. It names a user and a vhost.
+Compare what exists: `kubectl exec rabbitmq-0 -- rabbitmqctl list_vhosts` and `... rabbitmqctl list_users`.
+Authentication (who you are) is fine; authorization is not: `kubectl exec rabbitmq-0 -- rabbitmqctl list_permissions -p prod` and `... list_user_permissions orders-svc`.
+`rabbitmqctl set_permissions -p prod orders-svc ".*" ".*" ".*"` grants configure/write/read. Then `kubectl rollout restart deploy/producer` to skip back-off.

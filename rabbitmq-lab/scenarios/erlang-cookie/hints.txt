@@ -1,0 +1,4 @@
+`kubectl get pods` and `kubectl logs rabbitmq-2` (add `--previous` if it restarted). Look at cluster_status from a healthy node: `kubectl exec rabbitmq-0 -- rabbitmqctl cluster_status`.
+Erlang nodes only talk if they share the same cookie. Where does the cookie come from? `kubectl get sts rabbitmq -o yaml | grep -B2 -A4 COOKIE`.
+Compare the cookie each pod is really running with to the Secret: `kubectl exec rabbitmq-0 -- cat /var/lib/rabbitmq/.erlang.cookie` vs `kubectl get secret rabbitmq-secret -o jsonpath='{.data.erlang-cookie}' | base64 -d`.
+Pods 0 and 1 hold the old cookie in memory and on disk. Put the OLD value back into the Secret (it is the value in their cookie file), then `kubectl delete pod rabbitmq-2` so it restarts with it.

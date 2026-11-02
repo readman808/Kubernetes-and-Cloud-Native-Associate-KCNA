@@ -1,0 +1,4 @@
+Ask each node: `kubectl exec rabbitmq-0 -- rabbitmq-diagnostics alarms` and `... rabbitmq-diagnostics memory_breakdown`. Also `rabbitmqctl list_connections name state` (look for blocked).
+Memory alarm fires when usage crosses the high watermark. See the configured value: `kubectl exec rabbitmq-0 -- rabbitmqctl eval 'vm_memory_monitor:get_vm_memory_high_watermark().'` and `kubectl get cm rabbitmq-config -o yaml`.
+The absolute watermark is only 20MB, below a brand-new idle node's footprint. Quick fix (lost on restart): `rabbitmqctl set_vm_memory_high_watermark 0.4` on each pod.
+Durable fix: edit ConfigMap rabbitmq-config (use `vm_memory_high_watermark.relative = 0.4`), then `kubectl rollout restart sts/rabbitmq` - ConfigMap changes are not hot-reloaded.
