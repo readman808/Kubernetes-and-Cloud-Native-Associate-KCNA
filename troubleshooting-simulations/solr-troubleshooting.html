@@ -1,0 +1,864 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Solr Incident Room</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: incident rail on the left, then brief -> terminal -> debrief in one column. Stacks under 880px. */
+:root{
+  --bg:#eceff4; --panel:#ffffff; --ink:#18202e; --muted:#566178; --line:#d3d9e4;
+  --accent:#b8480f; --accent-ink:#ffffff; --accent-soft:#fbe9dd;
+  --ok:#17744a; --ok-soft:#dcf2e6; --warn:#8f5f00; --warn-soft:#faedc6; --crit:#bf3329; --crit-soft:#fbe1de;
+  --term-bg:#0e131b; --term-fg:#d5deeb; --term-dim:#7c89a0; --term-ok:#62d493; --term-err:#ff7b72; --term-warn:#f1c36b; --term-prompt:#6cb4ff; --term-line:#222b3a;
+  --font-display:'Barlow Condensed','Arial Narrow',sans-serif;
+  --font-body:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --font-mono:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#10141b; --panel:#192029; --ink:#e5eaf2; --muted:#9aa5b8; --line:#2a3342;
+    --accent:#ff8d50; --accent-ink:#1a0e06; --accent-soft:#33241a;
+    --ok:#5fd493; --ok-soft:#173326; --warn:#f0c15f; --warn-soft:#352c14; --crit:#ff8077; --crit-soft:#3a1d1b;
+    --term-bg:#0a0d13; --term-line:#1d2531;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#10141b; --panel:#192029; --ink:#e5eaf2; --muted:#9aa5b8; --line:#2a3342;
+  --accent:#ff8d50; --accent-ink:#1a0e06; --accent-soft:#33241a;
+  --ok:#5fd493; --ok-soft:#173326; --warn:#f0c15f; --warn-soft:#352c14; --crit:#ff8077; --crit-soft:#3a1d1b;
+  --term-bg:#0a0d13; --term-line:#1d2531;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:15px/1.55 var(--font-body);
+  padding-block:20px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.app{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+h1,h2,h3{font-family:var(--font-display);font-weight:700;letter-spacing:.01em;margin:0;text-wrap:balance}
+code{font-family:var(--font-mono);font-size:.88em;background:var(--accent-soft);padding:1px 5px;border-radius:3px}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.top{display:flex;flex-wrap:wrap;align-items:end;justify-content:space-between;gap:12px 24px}
+.brand{display:flex;align-items:center;gap:12px}
+.sun{width:34px;height:34px;border-radius:50%;flex:none;background:radial-gradient(circle,var(--accent) 0 38%,transparent 39%),repeating-conic-gradient(var(--accent) 0 9deg,transparent 9deg 30deg);-webkit-mask:radial-gradient(circle,#000 0 99%,transparent 100%)}
+h1{font-size:2.3rem;line-height:1}
+.sub{margin:6px 0 0;color:var(--muted);max-width:62ch}
+.total{font-family:var(--font-mono);font-size:.82rem;color:var(--muted);text-align:right}
+.total b{color:var(--ink);font-weight:500}
+
+.layout{display:grid;grid-template-columns:290px minmax(0,1fr);gap:20px;align-items:start}
+.rail{display:flex;flex-direction:column;gap:14px;min-width:0}
+.rail ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.inc{width:100%;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px 12px;display:grid;gap:4px}
+.inc[aria-current="true"]{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}
+.inc:hover{border-color:var(--muted)}
+.inc .t{font-weight:600;line-height:1.3}
+.inc .m{display:flex;justify-content:space-between;gap:8px;font-family:var(--font-mono);font-size:.74rem;color:var(--muted)}
+.pill{display:inline-block;font-family:var(--font-mono);font-size:.72rem;font-weight:500;padding:1px 7px;border-radius:3px;letter-spacing:.04em}
+.pill.sev1{background:var(--crit-soft);color:var(--crit)}
+.pill.sev2{background:var(--warn-soft);color:var(--warn)}
+.pill.done{background:var(--ok-soft);color:var(--ok)}
+.pill.fail{background:var(--crit-soft);color:var(--crit)}
+
+.ref{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px 12px;font-size:.88rem}
+.ref summary{cursor:pointer;font-weight:600}
+.ref dl{margin:10px 0 0;display:grid;gap:8px}
+.ref dt{font-family:var(--font-mono);font-size:.74rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.ref dd{margin:0;display:flex;flex-direction:column;gap:3px;min-width:0}
+.ref dd code{display:block;overflow-x:auto;white-space:nowrap}
+
+.main{display:flex;flex-direction:column;gap:14px;min-width:0}
+.brief{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px 18px;display:grid;gap:8px}
+.brief .row{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;font-family:var(--font-mono);font-size:.78rem;color:var(--muted)}
+.brief h2{font-size:1.7rem;line-height:1.1}
+.brief p{margin:0;max-width:72ch}
+.brief .facts{font-family:var(--font-mono);font-size:.78rem;color:var(--muted);border-top:1px dashed var(--line);padding-top:8px;overflow-wrap:anywhere}
+
+.term{background:var(--term-bg);color:var(--term-fg);border:1px solid var(--term-line);border-radius:8px;overflow:hidden;font-family:var(--font-mono);font-size:12.5px;line-height:1.5}
+.termbar{display:flex;justify-content:space-between;gap:12px;padding:7px 12px;border-bottom:1px solid var(--term-line);color:var(--term-dim);font-size:11.5px}
+.out{height:clamp(320px,52vh,540px);overflow:auto;padding:10px 12px;white-space:pre}
+.out div{min-height:1.5em}
+.out .p{color:var(--term-prompt)}
+.out .dim{color:var(--term-dim)}
+.out .ok{color:var(--term-ok)}
+.out .err{color:var(--term-err)}
+.out .warn{color:var(--term-warn)}
+.out .banner{font-weight:500;margin-block:6px}
+.prompt{display:flex;gap:8px;align-items:center;padding:8px 12px;border-top:1px solid var(--term-line)}
+.prompt label{color:var(--term-prompt);white-space:nowrap}
+.prompt input{flex:1;min-width:0;background:transparent;border:0;color:var(--term-fg);font:inherit;padding:4px 0}
+.prompt input:focus{outline:none}
+.prompt:focus-within{box-shadow:inset 0 0 0 1px var(--term-prompt)}
+
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.btn{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:7px 14px;font-weight:500}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.stat{margin-left:auto;font-family:var(--font-mono);font-size:.8rem;color:var(--muted)}
+
+.debrief>*,.brief>*{min-width:0}
+.debrief{background:var(--panel);border:1px solid var(--ok);border-radius:8px;padding:16px 18px;display:grid;gap:12px}
+.debrief.failed{border-color:var(--crit)}
+.debrief h2{font-size:1.5rem}
+.debrief h3{font-size:1.05rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.debrief p,.debrief ul{margin:4px 0 0;max-width:74ch}
+.debrief ul{padding-left:1.2em}
+.debrief pre{margin:6px 0 0;background:var(--term-bg);color:var(--term-fg);padding:10px 12px;border-radius:6px;overflow-x:auto;font:12.5px/1.5 var(--font-mono)}
+
+@media (max-width:880px){
+  .layout{grid-template-columns:minmax(0,1fr)}
+  .rail ul{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr))}
+  .total{text-align:left}
+  h1{font-size:1.9rem}
+}
+@media (prefers-reduced-motion:no-preference){.inc{transition:border-color .15s}}
+</style>
+
+</head>
+<body>
+
+
+<div class="app">
+  <header class="top">
+    <div>
+      <div class="brand"><span class="sun" aria-hidden="true"></span><h1>Solr Incident Room</h1></div>
+      <p class="sub">Six outages on a SolrCloud cluster running in Kubernetes. Read the alert, investigate from the terminal, and type the commands that fix it. Nothing here touches a real cluster.</p>
+    </div>
+    <div class="total" id="total"></div>
+  </header>
+
+  <div class="layout">
+    <nav class="rail" aria-label="Incidents">
+      <ul id="list"></ul>
+      <details class="ref">
+        <summary>Command reference</summary>
+        <dl>
+          <dt>Kubernetes</dt>
+          <dd><code>kubectl get pods|svc|pvc|sts</code><code>kubectl describe pod solr-0</code><code>kubectl logs solr-0 --previous</code><code>kubectl top pods</code><code>kubectl set env|resources ...</code><code>kubectl patch pvc ...</code><code>kubectl exec solr-0 -- &lt;cmd&gt;</code></dd>
+          <dt>Solr HTTP APIs</dt>
+          <dd><code>curl "localhost:8983/solr/admin/collections?action=..."</code><code>curl localhost:8983/solr/admin/cores?action=STATUS</code><code>curl localhost:8983/solr/products/config</code><code>curl -X POST -H 'Content-type:application/json' -d '{...}' URL</code><code>curl localhost:8983/solr/admin/metrics</code></dd>
+          <dt>In the pod</dt>
+          <dd><code>df -h</code><code>du -sh /var/solr/*</code><code>ls -lh /var/solr/...</code><code>nslookup &lt;host&gt;</code></dd>
+          <dt>Simulator</dt>
+          <dd><code>help</code><code>hint</code> (costs 15 points)<code>clear</code></dd>
+        </dl>
+      </details>
+    </nav>
+
+    <main class="main">
+      <section id="brief" class="brief" aria-live="polite"></section>
+      <section class="term" id="term" aria-label="Terminal">
+        <div class="termbar"><span>ops@bastion</span><span id="ctx">context: staging-search · namespace: search</span></div>
+        <div class="out" id="out" role="log"></div>
+        <form class="prompt" id="form" autocomplete="off">
+          <label for="cmd">$</label>
+          <input id="cmd" type="text" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="send" placeholder="type a command, or help">
+        </form>
+      </section>
+      <div class="bar">
+        <button class="btn" id="hintBtn" type="button">Hint (−15)</button>
+        <button class="btn" id="resetBtn" type="button">Reset incident</button>
+        <button class="btn primary" id="nextBtn" type="button" hidden>Next incident</button>
+        <span class="stat" id="stat"></span>
+      </div>
+      <section id="debrief" hidden></section>
+    </main>
+  </div>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+/* ---------- helpers ---------- */
+const J = o => JSON.stringify(o, null, 2);
+const hdr = q => ({responseHeader:{status:0, QTime:q||4}});
+function table(head, rows){
+  const all=[head].concat(rows);
+  const w=head.map((_,i)=>Math.max.apply(null,all.map(r=>String(r[i]).length))+3);
+  return all.map(r=>r.map((c,i)=>i<r.length-1?String(c).padEnd(w[i]):String(c)).join('')).join('\n');
+}
+const memMi=(n,u)=>/^g/i.test(u)?n*1024:n;
+const fmtMem=mi=>mi%1024===0?(mi/1024)+'Gi':mi+'Mi';
+const fmtJ=mi=>mi%1024===0?(mi/1024)+'g':mi+'m';
+const fmtSize=g=>g<=0?'4.0K':g<1?Math.round(g*1024)+'M':g<10?g.toFixed(1)+'G':Math.round(g)+'G';
+const rep=(core,pod,state,leader)=>{
+  const r={core:core,node_name:'solr-'+pod+'.solr-headless:8983_solr',state:state,type:'NRT'};
+  if(leader) r.leader='true';
+  return r;
+};
+const LIVE=['solr-0.solr-headless:8983_solr','solr-1.solr-headless:8983_solr','solr-2.solr-headless:8983_solr'];
+function statusJSON(shards, only){
+  const sh={};
+  Object.keys(shards).forEach(k=>{ if(!only||only===k) sh[k]={range:shards[k].range,state:'active',replicas:shards[k].replicas}; });
+  return J(Object.assign(hdr(11),{cluster:{collections:{products:{pullReplicas:'0',replicationFactor:'2',router:{name:'compositeId'},nrtReplicas:'2',tlogReplicas:'0',shards:sh}},live_nodes:LIVE}}));
+}
+function parseCurl(sh){
+  if(!/^curl\b/.test(sh)) return null;
+  const um=/(https?:\/\/[^\s'"]+|[\w.-]+:\d+\/[^\s'"]*)/.exec(sh);
+  if(!um) return {bad:'curl: (3) URL rejected: no URL given. Try http://localhost:8983/solr/...'};
+  let url=um[1]; if(!/^https?:/.test(url)) url='http://'+url;
+  let u; try{u=new URL(url);}catch(e){return {bad:'curl: (3) URL using bad/illegal format'};}
+  const q={}; u.searchParams.forEach((v,k)=>{q[k.toLowerCase()]=v;});
+  const h=u.hostname;
+  let err=null;
+  if(!(h==='localhost'||h==='127.0.0.1'||/solr/.test(h))) err='curl: (6) Could not resolve host: '+h;
+  else if(u.port && u.port!=='8983') err='curl: (7) Failed to connect to '+h+' port '+u.port+': Connection refused';
+  return {path:u.pathname.replace(/\/+$/,''), q:q, flat:sh.replace(/[\s'"]/g,''), post:/-X ?POST|\s-d\s|--data/i.test(sh), err:err, host:h};
+}
+const act=c=>((c.curl&&c.curl.q.action)||'').toUpperCase();
+
+/* ---------- incidents ---------- */
+const POD_RESTART_NOOP='statefulset.apps/solr restarted\n(The pods came back with exactly the same configuration, so nothing changed.)';
+
+const INCIDENTS = [
+
+/* 1 ------------------------------------------------------------ */
+{
+  id:'oom', title:'Pod keeps restarting', sev:'SEV-2',
+  time:'02:14 UTC', source:'Alertmanager',
+  body:'KubePodCrashLooping: solr-0 in namespace search has restarted 7 times in the last 20 minutes. This is the staging cluster’s only Solr node, and the catalog site is returning 503 on every search.',
+  facts:'Namespace search · StatefulSet solr (1 pod) · image solr:9.7 · ZooKeeper zk (3 pods)',
+  pods:['solr-0'],
+  init:()=>({limit:1024, heap:2048}),
+  solved:s=>s.limit>=s.heap*1.3,
+  hints:[
+    'Start with kubectl get pods, then kubectl describe pod solr-0 and read the Last State block.',
+    'Exit code 137 with reason OOMKilled means the kernel killed the container for going over its memory limit. Compare the JVM heap (SOLR_JAVA_MEM) with the container memory limit.',
+    'The JVM needs more than its heap: metaspace, thread stacks and direct buffers sit outside it. Raise the limit well above the heap (kubectl set resources statefulset/solr --limits=memory=3Gi) or lower the heap (kubectl set env statefulset/solr SOLR_JAVA_MEM="-Xms512m -Xmx512m").'
+  ],
+  debrief:{
+    cause:'The container memory limit was 1Gi, but SOLR_JAVA_MEM asked for a 2g heap. As the heap filled, total process memory crossed the cgroup limit and the kernel OOM-killed the JVM (exit 137). Kubernetes restarted it, and the cycle repeated.',
+    fix:['kubectl set resources statefulset/solr --limits=memory=3Gi','# or shrink the heap instead:','kubectl set env statefulset/solr SOLR_JAVA_MEM="-Xms512m -Xmx512m"'],
+    prevent:['Keep the container limit at roughly heap + 25-30%, and set requests equal to limits for Solr.','Alert on container_memory_working_set_bytes approaching the limit, not only on restarts.','Leave plenty of free RAM outside the heap: Lucene relies on the OS page cache for index files.']
+  },
+  handle(c,s){
+    const ok=this.solved(s);
+    const heap='-Xms'+fmtJ(s.heap)+' -Xmx'+fmtJ(s.heap);
+    if(c.pod && !ok) return 'error: unable to upgrade connection: container not found ("solr")';
+    if(c.bare && c.curl && !ok) return 'curl: (7) Failed to connect to localhost port 8983 after 0 ms: Connection refused';
+    if(c.curl && ok) return J(Object.assign(hdr(1),{status:'OK'}));
+    const k=c.kube;
+    const after=()=>this.solved(s)
+      ? '✓ statefulset rolled out. solr-0 is 1/1 Running and has stayed up for 60s.'
+      : 'Rollout finished, but solr-0 was OOMKilled again after 38s.\nThe limit ('+fmtMem(s.limit)+') leaves too little headroom for a '+fmtJ(s.heap)+' heap.';
+    if(!k) return null;
+    let m;
+    if(/^get (pods?|po)\b/.test(k)) return table(['NAME','READY','STATUS','RESTARTS','AGE'],[['solr-0',ok?'1/1':'0/1',ok?'Running':'CrashLoopBackOff',ok?'0':'7 (82s ago)','3h']]);
+    if(/^get (sts|statefulsets?)\b(?!.*-o)/.test(k)) return table(['NAME','READY','AGE'],[['solr',ok?'1/1':'0/1','3h']]);
+    if(/^top\b/.test(k)) return ok?table(['NAME','CPU(cores)','MEMORY(bytes)'],[['solr-0','188m',fmtMem(Math.round(s.heap*1.1))]]):table(['NAME','CPU(cores)','MEMORY(bytes)'],[['solr-0','812m','1019Mi']]);
+    if(/^describe (pods?|po)\b/.test(k)) return [
+      'Name:         solr-0','Namespace:    search','Status:       '+(ok?'Running':'Running'),
+      'Containers:','  solr:','    Image:          solr:9.7',
+      ok?'    State:          Running':'    State:          Waiting\n      Reason:       CrashLoopBackOff',
+      ok?'':'    Last State:     Terminated\n      Reason:       OOMKilled\n      Exit Code:    137\n      Started:      Mon, 02 Nov 2026 02:11:07 +0000\n      Finished:     Mon, 02 Nov 2026 02:12:49 +0000',
+      '    Ready:          '+(ok?'True':'False'),'    Restart Count:  '+(ok?'0':'7'),
+      '    Limits:','      cpu:     2','      memory:  '+fmtMem(s.limit),
+      '    Requests:','      cpu:     500m','      memory:  '+fmtMem(Math.min(s.limit,1024)),
+      '    Environment:','      SOLR_JAVA_MEM:  '+heap,'      ZK_HOST:        zk-0.zk-headless:2181,zk-1.zk-headless:2181,zk-2.zk-headless:2181',
+      ok?'':'Events:\n  Warning  BackOff  3m (x41 over 3h)  kubelet  Back-off restarting failed container solr'
+    ].filter(x=>x!=='').join('\n');
+    if(/^(describe|get) (sts|statefulsets?)\b/.test(k)) return ['Name:      solr','Replicas:  1 desired | 1 total','Pod Template:','  Containers:','   solr:','    Image:  solr:9.7','    Limits:','      memory:  '+fmtMem(s.limit),'    Environment:','      SOLR_JAVA_MEM:  '+heap].join('\n');
+    if(/^logs\b/.test(k)) return ok?['INFO  Starting Solr 9.7.0 on Java 17.0.12','INFO  JVM args: ['+heap.replace(' ',', ')+', -XX:+UseG1GC]','INFO  Connecting to ZooKeeper zk-0.zk-headless:2181 ...','INFO  Server Started. Solr is ready.'].join('\n')
+      : ['INFO  Starting Solr 9.7.0 on Java 17.0.12','INFO  JVM args: ['+heap.replace(' ',', ')+', -XX:+UseG1GC, -XX:MaxGCPauseMillis=250]','INFO  Connecting to ZooKeeper zk-0.zk-headless:2181 ...','INFO  Loading collection "catalog" cores ...','INFO  Opening searcher for products_shard1_replica_n1','Killed'].join('\n');
+    if((m=/^set resources (?:sts|statefulsets?)[\/ ]solr\b.*--limits?[= ][^ ]*?memory=(\d+)(Gi|Mi|G|M)\b/i.exec(k))){
+      s.limit=memMi(+m[1],m[2]); return 'statefulset.apps/solr resource requirements updated\n'+after();
+    }
+    if((m=/^set env (?:sts|statefulsets?)[\/ ]solr\b.*(?:SOLR_JAVA_MEM=.*-Xmx|SOLR_HEAP=)(\d+)([mMgG])/.exec(k))){
+      s.heap=memMi(+m[1],m[2]); return 'statefulset.apps/solr env updated\n'+after();
+    }
+    if(/^patch /.test(k) && (m=/memory["']?\s*:\s*["']?(\d+)(Gi|Mi)/i.exec(k))){
+      s.limit=memMi(+m[1],m[2]); return 'statefulset.apps/solr patched\n'+after();
+    }
+    if(/^rollout restart/.test(k)||/^delete pods? solr-0/.test(k)) return 'pod "solr-0" restarted.\nIt came back with the same limits and was OOMKilled again.';
+    return null;
+  }
+},
+
+/* 2 ------------------------------------------------------------ */
+{
+  id:'leader', title:'Writes rejected on one shard', sev:'SEV-2',
+  time:'09:41 UTC', source:'Application error budget',
+  body:'The indexer is failing about 50% of its update batches with "No registered leader was found after waiting for 4000ms, collection: products slice: shard2". Reads for part of the catalog return 503 too. All six pods show Running.',
+  facts:'Namespace search · StatefulSet solr (3 pods) · ZooKeeper zk (3 pods) · collection products (2 shards x 2 replicas)',
+  pods:['solr-0','solr-1','solr-2','zk-0','zk-1','zk-2'],
+  init:()=>({leader:false}),
+  solved:s=>s.leader,
+  shards(s){
+    return {
+      shard1:{range:'80000000-ffffffff',replicas:{core_node1:rep('products_shard1_replica_n1',0,'active',true),core_node2:rep('products_shard1_replica_n2',1,'active')}},
+      shard2:{range:'0-7fffffff',replicas:{core_node3:rep('products_shard2_replica_n3',1,s.leader?'active':'recovering',s.leader),core_node4:rep('products_shard2_replica_n4',2,s.leader?'active':'recovering')}}
+    };
+  },
+  hints:[
+    'Pods are healthy, so look at the collection instead. Ask the Collections API for CLUSTERSTATUS and check each shard.',
+    'shard2 has no replica marked leader, and both of its replicas sit in "recovering", each waiting for a leader to sync from. Restarting pods does not break that deadlock.',
+    'Use the Collections API action FORCELEADER: curl "http://localhost:8983/solr/admin/collections?action=FORCELEADER&collection=products&shard=shard2"'
+  ],
+  debrief:{
+    cause:'After an unclean node restart, both shard2 replicas came up in recovery. Each declined to become leader because it believed the other might hold newer data, and a replica in recovery cannot be a source for the other. No leader was ever elected, so every update routed to shard2 failed.',
+    fix:['curl "http://localhost:8983/solr/admin/collections?action=CLUSTERSTATUS&collection=products"','curl "http://localhost:8983/solr/admin/collections?action=FORCELEADER&collection=products&shard=shard2"'],
+    prevent:['Use FORCELEADER only after CLUSTERSTATUS shows a shard with no leader and every replica in recovery. It can lose the most recent writes.','Roll Solr pods one at a time and gate each step on the previous pod becoming Ready (partition or PodDisruptionBudget).','Alert on "shard without leader" using the cluster status or Prometheus exporter, not on pod health.']
+  },
+  handle(c,s){
+    const sh=this.shards(s);
+    const pod=(c.kube&&(/(solr|zk)-\d/.exec(c.kube)||[])[0])||c.pod||'solr-0';
+    const k=c.kube;
+    if(k){
+      if(/^get (pods?|po)\b/.test(k)) return table(['NAME','READY','STATUS','RESTARTS','AGE'],[['solr-0','1/1','Running','0','2d'],['solr-1','1/1','Running','1','2d'],['solr-2','1/1','Running','1','2d'],['zk-0','1/1','Running','0','9d'],['zk-1','1/1','Running','0','9d'],['zk-2','1/1','Running','0','9d']]);
+      if(/^logs\b/.test(k)){
+        if(s.leader) return 'INFO  (zkCallback) [c:products s:shard2 r:core_node3] ShardLeaderElectionContext I am the new leader: http://solr-1.solr-headless:8983/solr/products_shard2_replica_n3/\nINFO  RecoveryStrategy Finished recovery process, successful=[true]';
+        if(pod==='solr-0') return ['INFO  (qtp1-28) [c:products s:shard1 r:core_node1] DistributedZkUpdateProcessor forwarding update','ERROR (qtp1-31) [c:products s:shard2] SolrException  No registered leader was found after waiting for 4000ms , collection: products slice: shard2 saw state=DocCollection(products)','ERROR (qtp1-31) o.a.s.s.HttpSolrCall 503 Service Unavailable'].join('\n');
+        return ['WARN  (recoveryExecutor-4) [c:products s:shard2 r:core_node'+(pod==='solr-1'?'3':'4')+'] RecoveryStrategy Stopping recovery for core products_shard2_replica_n'+(pod==='solr-1'?'3':'4'),'INFO  (zkCallback) ShardLeaderElectionContext There may be a better leader candidate than us - going back into recovery','ERROR (recoveryExecutor-4) RecoveryStrategy No registered leader was found after waiting for 4000ms , collection: products slice: shard2','INFO  RecoveryStrategy Replay not started, waiting for leader'].join('\n');
+      }
+      if(/^rollout restart/.test(k)||/^delete pods? /.test(k)) return s.leader?'pods restarted; leaders re-elected normally.':'statefulset.apps/solr restarted\nAll pods Ready again, but CLUSTERSTATUS still shows shard2 with no leader.\nBoth replicas came back in recovery and are still waiting for each other.';
+      if(/^top\b/.test(k)) return table(['NAME','CPU(cores)','MEMORY(bytes)'],[['solr-0','210m','2201Mi'],['solr-1','188m','2310Mi'],['solr-2','176m','2290Mi']]);
+      return null;
+    }
+    const cu=c.curl;
+    if(!cu) return null;
+    if(cu.bad) return cu.bad;
+    if(cu.err) return cu.err;
+    if(cu.path==='/solr/admin/collections'){
+      const a=act(c);
+      if(a==='CLUSTERSTATUS'){
+        const only=cu.q.shard;
+        if(cu.q.collection && cu.q.collection!=='products') return J({error:{msg:'Collection: '+cu.q.collection+' not found',code:404}});
+        return statusJSON(sh, only);
+      }
+      if(a==='LIST') return J(Object.assign(hdr(1),{collections:['products']}));
+      if(a==='FORCELEADER'){
+        if(!cu.q.collection||!cu.q.shard) return J({error:{msg:'Missing required parameter: '+(cu.q.collection?'shard':'collection'),code:400}});
+        if(cu.q.shard==='shard2'){ s.leader=true; return J(Object.assign(hdr(1873),{success:{'solr-1.solr-headless:8983_solr':{responseHeader:{status:0,QTime:1}}}}))+'\n\n✓ Leader forced on shard2. Replicas are leaving recovery.'; }
+        return J({error:{msg:'shard1 already has an active leader (core_node1). FORCELEADER is a no-op.',code:400}});
+      }
+      if(a==='REBALANCELEADERS') return J({error:{msg:'No replicas with the preferredLeader property were found in collection products',code:400}});
+      if(a==='ADDREPLICA'&&!s.leader) return J(Object.assign(hdr(2210),{success:{'solr-0.solr-headless:8983_solr':{core:'products_shard2_replica_n5'}}}))+'\n(A third shard2 replica was created, but it also sits in recovery: there is still nobody to sync from.)';
+      if(a==='DELETEREPLICA') return J(Object.assign(hdr(540),{success:true}))+'\n(Replica removed. The remaining shard2 replica is still in recovery with no leader.)';
+      if(a==='DELETE'||a==='DELETESHARD'){ s.failed='You deleted '+(a==='DELETE'?'the products collection':'shard2')+'. The data is gone and has to be reindexed from source.'; return J(Object.assign(hdr(1200),{success:true})); }
+      return J(Object.assign(hdr(3),{note:'action '+(a||'(none)')+' did nothing useful for this incident'}));
+    }
+    if(/^\/solr\/products\/(select|update)/.test(cu.path)){
+      if(!s.leader) return J({error:{metadata:['error-class','org.apache.solr.common.SolrException'],msg:'No registered leader was found after waiting for 4000ms , collection: products slice: shard2',code:503}});
+      return J({responseHeader:{status:0,QTime:6},response:{numFound:1284391,start:0,numFoundExact:true,docs:[]}});
+    }
+    return null;
+  }
+},
+
+/* 3 ------------------------------------------------------------ */
+{
+  id:'zk', title:'Pods Running but never Ready', sev:'SEV-1',
+  time:'13:05 UTC', source:'Deploy pipeline',
+  body:'After a Helm upgrade, all three Solr pods report 0/1 Ready and the rollout is stuck. The Solr Admin UI shows "Solr is not connected to ZooKeeper". Search has been down since the upgrade.',
+  facts:'Namespace search · StatefulSet solr (3 pods) · ZooKeeper StatefulSet zk (3 pods, port 2181) · collection products',
+  pods:['solr-0','solr-1','solr-2','zk-0','zk-1','zk-2'],
+  init:()=>({zk:'zookeeper-0.zookeeper-headless:2181,zookeeper-1.zookeeper-headless:2181,zookeeper-2.zookeeper-headless:2181'}),
+  zkOK(v){
+    if(!v) return false;
+    const hosts=v.split(',').map(h=>h.replace(/\/.*$/,'').replace(/:\d+$/,''));
+    const portsOK=v.split(',').every(h=>{const m=/:(\d+)/.exec(h.replace(/\/.*$/,''));return !m||m[1]==='2181';});
+    return portsOK && hosts.every(h=>/^(zk-[0-2]\.)?zk-headless(\.search(\.svc(\.cluster\.local)?)?)?$/.test(h));
+  },
+  solved(s){ return this.zkOK(s.zk); },
+  hints:[
+    'Running but not Ready usually means the readiness probe fails. Read the logs of a Solr pod and look for the first ERROR.',
+    'Solr is trying to reach zookeeper-N.zookeeper-headless and DNS cannot find it. Run kubectl get svc to see what the ZooKeeper service is actually called.',
+    'Point ZK_HOST at the real names: kubectl set env statefulset/solr ZK_HOST=zk-0.zk-headless:2181,zk-1.zk-headless:2181,zk-2.zk-headless:2181'
+  ],
+  debrief:{
+    cause:'The chart upgrade changed the ZK_HOST environment variable to zookeeper-N.zookeeper-headless, but the ZooKeeper StatefulSet and its headless service are named zk and zk-headless. The names did not resolve (NXDOMAIN), Solr could not open a ZooKeeper session, and the readiness probe kept returning 503. ZooKeeper itself was healthy the whole time.',
+    fix:['kubectl logs solr-0','kubectl get svc','kubectl exec solr-0 -- nslookup zk-0.zk-headless','kubectl set env statefulset/solr ZK_HOST=zk-0.zk-headless:2181,zk-1.zk-headless:2181,zk-2.zk-headless:2181'],
+    prevent:['Render ZK_HOST from the same Helm value that names the ZooKeeper release instead of hard-coding it twice.','Run helm template and diff before upgrades, and keep a smoke test that resolves the ZooKeeper names.','List all ensemble members in ZK_HOST so Solr survives the loss of one ZooKeeper pod.']
+  },
+  handle(c,s){
+    const ok=this.solved(s);
+    const k=c.kube;
+    if(k){
+      if(/^get (pods?|po)\b/.test(k)){
+        const r=ok?'1/1':'0/1';
+        return table(['NAME','READY','STATUS','RESTARTS','AGE'],[['solr-0',r,'Running','0','6m'],['solr-1',r,'Running','0','6m'],['solr-2',r,'Running','0','5m'],['zk-0','1/1','Running','0','9d'],['zk-1','1/1','Running','0','9d'],['zk-2','1/1','Running','0','9d']]);
+      }
+      if(/^get (svc|services?)\b/.test(k)) return table(['NAME','TYPE','CLUSTER-IP','PORT(S)'],[['solr','ClusterIP','10.96.12.40','8983/TCP'],['solr-headless','ClusterIP','None','8983/TCP'],['zk','ClusterIP','10.96.77.9','2181/TCP'],['zk-headless','ClusterIP','None','2181/TCP,2888/TCP,3888/TCP']]);
+      if(/^logs\b/.test(k)){
+        if(ok) return 'INFO  Connecting to ZooKeeper '+s.zk+'\nINFO  ZkStateReader Updated live nodes from ZooKeeper... (3)\nINFO  Server Started. Solr is ready.';
+        return ['INFO  Starting Solr 9.7.0 on Java 17.0.12','INFO  Connecting to ZooKeeper '+s.zk+' ...','WARN  (main-SendThread) ClientCnxn Unable to resolve address: zookeeper-0.zookeeper-headless:2181','java.net.UnknownHostException: zookeeper-0.zookeeper-headless: Name or service not known','WARN  (main-SendThread) ClientCnxn Unable to resolve address: zookeeper-1.zookeeper-headless:2181','ERROR (main) ZkContainer Could not connect to ZooKeeper within 15000 ms','SEVERE null:org.apache.solr.common.cloud.ZooKeeperException: Could not connect to ZooKeeper '+s.zk+' within 15000 ms'].join('\n');
+      }
+      if(/^describe (pods?|po)\b/.test(k)) return ['Name:       solr-0','Status:     Running','Containers:','  solr:','    Ready:   '+(ok?'True':'False'),'    Environment:','      ZK_HOST:  '+s.zk,'      SOLR_JAVA_MEM:  -Xms1g -Xmx1g',ok?'':'Events:\n  Warning  Unhealthy  14s (x31 over 5m)  kubelet  Readiness probe failed: HTTP probe failed with statuscode: 503'].filter(x=>x!=='').join('\n');
+      if(/^(describe|get) (sts|statefulsets?)\b/.test(k)&&/solr\b|-o|describe/.test(k)) return ['Name:      solr','Replicas:  3 desired | 3 total','Pod Template:','  Containers:','   solr:','    Environment:','      ZK_HOST:  '+s.zk].join('\n');
+      let m;
+      if(/^set env /.test(k)){
+        if(!/(sts|statefulsets?)[\/ ]solr\b/.test(k)) return 'error: no resources found for that name (the Solr StatefulSet is called solr)';
+        if((m=/ZK_HOST=(\S+)/.exec(k.replace(/["']/g,'')))){
+          s.zk=m[1];
+          if(this.zkOK(s.zk)) return 'statefulset.apps/solr env updated\n✓ Rolling update complete. solr-0, solr-1 and solr-2 are 1/1 Ready.'+(s.zk.indexOf(',')<0?'\n(Only one ZooKeeper member is listed. That works, but it is a single point of failure.)':'');
+          return 'statefulset.apps/solr env updated\nRollout finished, but the pods are still 0/1. Solr logs: "Could not connect to ZooKeeper '+s.zk+'".\nCheck the hostnames against kubectl get svc and the port against 2181.';
+        }
+      }
+      if(/^rollout restart/.test(k)||/^delete pods? /.test(k)){
+        if(/zk-/.test(k)) return 'pod deleted. zk-0 came back healthy in 12s. ZooKeeper was never the problem.';
+        return ok?POD_RESTART_NOOP:'statefulset.apps/solr restarted\nStill 0/1: the pods are reading the same ZK_HOST value.';
+      }
+      return null;
+    }
+    const sh=c.sh||'';
+    let m;
+    if((m=/^(?:nslookup|dig|getent hosts|host)\s+(?:\+short\s+)?(\S+)/.exec(sh))){
+      const h=m[1];
+      if(/^(zk-[0-2]\.)?zk-headless(\..*)?$/.test(h)) return 'Server:   10.96.0.10\nAddress:  10.96.0.10#53\n\nName:     '+h+'\nAddress:  10.244.2.'+(17+(+(/zk-(\d)/.exec(h)||[0,0])[1]));
+      return 'Server:   10.96.0.10\nAddress:  10.96.0.10#53\n\n** server can\'t find '+h+': NXDOMAIN';
+    }
+    if(/zkServer\.sh status/.test(sh)) return 'ZooKeeper JMX enabled by default\nClient port found: 2181. Client address: localhost.\nMode: '+(c.pod==='zk-1'?'leader':'follower');
+    if(/ruok/.test(sh)) return 'imok';
+    if(c.curl){
+      if(c.curl.bad) return c.curl.bad;
+      if(c.curl.err) return c.curl.err;
+      if(/\/admin\/collections|\/solr\/products/.test(c.curl.path)&&!ok) return J({error:{msg:'Cannot connect to cluster at '+s.zk+': cluster not found/not ready',code:503}});
+      if(ok) return J(Object.assign(hdr(3),{collections:['products']}));
+      return J(Object.assign(hdr(1),{status:'OK',mode:'solrcloud',zkConnected:false}));
+    }
+    return null;
+  }
+},
+
+/* 4 ------------------------------------------------------------ */
+{
+  id:'disk', title:'Indexing stops, disk alarm', sev:'SEV-2',
+  time:'16:22 UTC', source:'Alertmanager',
+  body:'KubePersistentVolumeFillingUp is firing for data-solr-0, and indexing jobs that land on solr-0 fail with "No space left on device". Queries still work. The other pods look normal.',
+  facts:'Namespace search · StatefulSet solr (3 pods) · each pod has a 20Gi PVC mounted at /var/solr · StorageClass standard',
+  pods:['solr-0','solr-1','solr-2'],
+  init:()=>({cap:20, data:13.9, logs:0.1, misc:0.1, backups:['backup.products.2026-01-05','backup.products.2026-02-02','backup.products.2026-03-02','backup.products.2026-04-06','backup.products.2026-05-04','backup.products.2026-06-01'], dels:0}),
+  used(s){ return s.data+s.logs+s.misc+s.backups.length*(5.9/6); },
+  solved(s){ return this.used(s)/s.cap<=0.9; },
+  hints:[
+    'Check the volume from inside the pod: kubectl exec solr-0 -- df -h. Then see what is using it with du.',
+    'Never touch /var/solr/data: that is the live index. Look for things that are safe to remove, such as old backups, or whether the volume itself can grow.',
+    'Either delete the stale backups: kubectl exec solr-0 -- rm -rf /var/solr/backups/*   or grow the PVC: kubectl patch pvc data-solr-0 -p \'{"spec":{"resources":{"requests":{"storage":"40Gi"}}}}\''
+  ],
+  debrief:{
+    cause:'Six monthly backups (about 6 GB) had been written to the same volume as the live index (14 GB) and never rotated. solr-0 holds a hot shard, so it reached 100% first. Lucene needs headroom to merge segments, so at 100% commits and merges fail and the core goes read-only for updates.',
+    fix:['kubectl exec solr-0 -- df -h','kubectl exec solr-0 -- du -sh /var/solr/*','kubectl exec solr-0 -- rm -rf /var/solr/backups/*','# or grow the volume (the StorageClass allows expansion):','kubectl patch pvc data-solr-0 -p \'{"spec":{"resources":{"requests":{"storage":"40Gi"}}}}\''],
+    prevent:['Write backups to object storage, never to the index volume.','Alert at 80% volume usage, not 95%. Merges can need up to 2x a segment\'s size temporarily.','Make sure the StorageClass has allowVolumeExpansion: true before you need it.']
+  },
+  handle(c,s){
+    const ok=this.solved(s);
+    const used=this.used(s);
+    const k=c.kube;
+    if(k){
+      let m;
+      if(/^get (pods?|po)\b/.test(k)) return table(['NAME','READY','STATUS','RESTARTS','AGE'],[['solr-0','1/1','Running','0','12d'],['solr-1','1/1','Running','0','12d'],['solr-2','1/1','Running','0','12d']]);
+      if(/^get (pvc|persistentvolumeclaims?)\b/.test(k)) return table(['NAME','STATUS','CAPACITY','ACCESS MODES','STORAGECLASS'],[['data-solr-0','Bound',s.cap+'Gi','RWO','standard'],['data-solr-1','Bound','20Gi','RWO','standard'],['data-solr-2','Bound','20Gi','RWO','standard']]);
+      if(/^get (sc|storageclass(es)?)\b/.test(k)) return table(['NAME','PROVISIONER','RECLAIMPOLICY','ALLOWVOLUMEEXPANSION'],[['standard (default)','kubernetes.io/gce-pd','Delete','true']]);
+      if(/^describe (pvc|persistentvolumeclaims?)\b/.test(k)) return 'Name:          data-solr-0\nStatus:        Bound\nCapacity:      '+s.cap+'Gi\nStorageClass:  standard\nUsed By:       solr-0';
+      if(/^logs\b/.test(k)){
+        if(ok) return 'INFO  (qtp1-12) [c:products s:shard1 r:core_node1] DirectUpdateHandler2 end_commit_flush\nINFO  UpdateLog Took 14 ms to ... updates are flowing again';
+        return ['INFO  (qtp1-12) DirectUpdateHandler2 start commit{flags=2,optimize=false,openSearcher=true}','ERROR (commitScheduler-14) [c:products s:shard1 r:core_node1] DirectUpdateHandler2 auto commit error...','java.io.IOException: No space left on device','\tat java.base/sun.nio.ch.FileDispatcherImpl.write0(Native Method)','ERROR (qtp1-33) HttpSolrCall 500 Internal Server Error: No space left on device','WARN  IndexWriter hit exception during merge ... tragic event'].join('\n');
+      }
+      if(/^patch (pvc|persistentvolumeclaims?)\b/.test(k)){
+        const pv=/^patch (?:pvc|persistentvolumeclaims?)[\/ ]([\w-]+)/.exec(k);
+        const name=pv?pv[1]:'';
+        const sz=/storage["']?\s*:\s*["']?(\d+)Gi/i.exec(k);
+        if(!sz) return 'error: unable to parse the patch. Expected {"spec":{"resources":{"requests":{"storage":"40Gi"}}}}';
+        if(name!=='data-solr-0') return 'persistentvolumeclaim/'+name+' patched\n(That volume was not the full one. data-solr-0 is the problem.)';
+        if(+sz[1]<s.cap) return 'The PersistentVolumeClaim "data-solr-0" is invalid: spec.resources.requests.storage: Forbidden: field can not be less than previous value';
+        s.cap=+sz[1];
+        return 'persistentvolumeclaim/data-solr-0 patched\nFileSystemResizeSuccessful: resized online to '+s.cap+'Gi';
+      }
+      if(/^edit /.test(k)) return null;
+      return null;
+    }
+    const sh=c.sh||'';
+    if(c.curl){
+      if(c.curl.bad) return c.curl.bad;
+      if(c.curl.err) return c.curl.err;
+      if(/\/update/.test(c.curl.path)) return ok?J(hdr(15)):J({error:{msg:'No space left on device',code:500}});
+      return J(hdr(2));
+    }
+    if(/^df\b/.test(sh)){
+      const big=c.pod==='solr-0'||c.bare;
+      const u=big?used:11.2, cap=big?s.cap:20, pct=Math.min(100,Math.round(u/cap*100)), av=Math.max(0,cap-u);
+      const f=(a,b,c,d,e)=>a.padEnd(15)+b.padStart(5)+c.padStart(6)+d.padStart(6)+e.padStart(5)+' ';
+      return f('Filesystem','Size','Used','Avail','Use%')+'Mounted on\n'+f('overlay','50G','11G','37G','23%')+'/\n'+f('/dev/sdb',cap+'G',u>=cap?cap+'G':fmtSize(u),av<0.05?'0':fmtSize(av),pct+'%')+'/var/solr\n'+f('tmpfs','3.9G','0','3.9G','0%')+'/dev/shm';
+    }
+    if(/^du\b/.test(sh)){
+      const bsz=s.backups.length*(5.9/6);
+      if(/\/var\/solr\/?\*?\s*$/.test(sh)&&!/data|backups|logs/.test(sh.replace(/\/var\/solr\/?\*?/,''))||/\/var\/solr\/\*/.test(sh)||/max-depth/.test(sh))
+        return fmtSize(s.data)+'\t/var/solr/data\n'+fmtSize(bsz)+'\t/var/solr/backups\n'+fmtSize(s.logs)+'\t/var/solr/logs'+(/\/var\/solr\/?$/.test(sh)||/max-depth/.test(sh)?'\n'+fmtSize(used)+'\t/var/solr':'');
+      if(/backups/.test(sh)) return fmtSize(bsz)+'\t/var/solr/backups';
+      if(/data/.test(sh)) return fmtSize(s.data)+'\t/var/solr/data';
+      if(/logs/.test(sh)) return fmtSize(s.logs)+'\t/var/solr/logs';
+      return fmtSize(used)+'\t.';
+    }
+    if(/^ls\b/.test(sh)){
+      if(/backups/.test(sh)) return s.backups.length? (/-\w*l/.test(sh)?'total '+Math.round(s.backups.length*6)+'\n'+s.backups.map((b,i)=>'drwxr-xr-x 3 solr solr 4.0K '+['Jan  5','Feb  2','Mar  2','Apr  6','May  4','Jun  1'][i%6]+' 2026 '+b).join('\n'):s.backups.join('\n')) : '';
+      if(/data/.test(sh)) return 'filestore\nproducts_shard1_replica_n1\nsolr.xml';
+      if(/logs/.test(sh)) return 'solr.log\nsolr_gc.log';
+      return 'backups\ndata\nlogs';
+    }
+    let m;
+    if((m=/^rm\s+((?:-\S+\s+)*)(.+)$/.exec(sh))||/^find .*(-delete|-exec rm)/.test(sh)){
+      const t=m?m[2]:sh;
+      if(/\/var\/solr\/data/.test(t)){ s.failed='You removed live index files from /var/solr/data. solr-0 lost its shard data.'; return ''; }
+      if(/backups/.test(t)){
+        if(/[*]|backups\/?$|^find/.test(t)) { s.backups=[]; return ''; }
+        const hit=s.backups.filter(b=>t.indexOf(b)>=0);
+        if(hit.length){ s.backups=s.backups.filter(b=>hit.indexOf(b)<0); return ''; }
+        return "rm: cannot remove '"+t+"': No such file or directory";
+      }
+      if(/logs/.test(t)){ s.logs=0; return ''; }
+      return "rm: cannot remove '"+t+"': No such file or directory";
+    }
+    return null;
+  }
+},
+
+/* 5 ------------------------------------------------------------ */
+{
+  id:'searchers', title:'Queries slow, CPU pinned', sev:'SEV-3',
+  time:'11:48 UTC', source:'Latency SLO',
+  body:'p95 search latency on the products collection went from 40 ms to 3.5 s. CPU on solr-1 is pegged. Indexing throughput is normal and nothing was deployed. The logs are scrolling faster than anyone can read.',
+  facts:'Namespace search · StatefulSet solr (3 pods) · collection products · the indexer sends updates continuously',
+  pods:['solr-0','solr-1','solr-2'],
+  init:()=>({soft:100, mws:2}),
+  solved:s=>s.soft===-1||s.soft>=5000,
+  hints:[
+    'Look at the logs of solr-1 and at kubectl top pods. What is Solr repeating over and over?',
+    '"Overlapping onDeckSearchers" means new searchers open (and warm caches) faster than they finish. Check how often soft commits happen: curl localhost:8983/solr/products/config/updateHandler, and compare with the UPDATE metrics.',
+    'autoSoftCommit.maxTime is 100 ms. Change it with the Config API: curl -X POST -H \'Content-type:application/json\' -d \'{"set-property":{"updateHandler.autoSoftCommit.maxTime":60000}}\' http://localhost:8983/solr/products/config'
+  ],
+  debrief:{
+    cause:'autoSoftCommit.maxTime was set to 100 ms, so while documents were arriving Solr opened a new searcher ten times a second. Each one warms its caches, saturating CPU, and warmups started piling up (Overlapping onDeckSearchers). Raising maxWarmingSearchers only hides the warning; the real fix is committing less often.',
+    fix:['kubectl logs solr-1','curl localhost:8983/solr/products/config/updateHandler','curl -X POST -H \'Content-type:application/json\' -d \'{"set-property":{"updateHandler.autoSoftCommit.maxTime":60000}}\' http://localhost:8983/solr/products/config'],
+    prevent:['Pick the soft-commit interval from the freshness the business needs (seconds to a minute), not from a guess.','Let indexing clients rely on autoCommit and autoSoftCommit instead of sending commit=true on every batch.','Watch UPDATE.updateHandler.softAutoCommits as a rate and alert when it spikes.']
+  },
+  handle(c,s){
+    const ok=this.solved(s);
+    const k=c.kube;
+    if(k){
+      if(/^get (pods?|po)\b/.test(k)) return table(['NAME','READY','STATUS','RESTARTS','AGE'],[['solr-0','1/1','Running','0','5d'],['solr-1','1/1','Running','0','5d'],['solr-2','1/1','Running','0','5d']]);
+      if(/^top\b/.test(k)) return table(['NAME','CPU(cores)','MEMORY(bytes)'],ok?[['solr-0','210m','3011Mi'],['solr-1','240m','3098Mi'],['solr-2','198m','2987Mi']]:[['solr-0','210m','3011Mi'],['solr-1','3912m','3611Mi'],['solr-2','198m','2987Mi']]);
+      if(/^logs\b/.test(k)){
+        const p=(/(solr-\d)/.exec(k)||[0,'solr-0'])[1];
+        if(ok||p!=='solr-1') return 'INFO  (qtp1-12) DirectUpdateHandler2 start commit{softCommit=true}\nINFO  (searcherExecutor-9) SolrCore Registered new searcher autowarm time: 412 ms\nINFO  (qtp1-14) [products] webapp=/solr path=/select hits=18 status=0 QTime=38';
+        return Array(3).fill(['WARN  (qtp1-41) [c:products s:shard1 r:core_node2 x:products_shard1_replica_n2] SolrCore  [products_shard1_replica_n2] PERFORMANCE WARNING: Overlapping onDeckSearchers=2','INFO  (qtp1-41) DirectUpdateHandler2 start commit{flags=2,optimize=false,openSearcher=true,waitSearcher=true,expungeDeletes=false,softCommit=true,prepareCommit=false}','INFO  (searcherExecutor-12) SolrCore Registered new searcher autowarm time: 2310 ms']).reduce((a,b)=>a.concat(b),[]).join('\n')+'\n... (repeats every ~100 ms)';
+      }
+      if(/^rollout restart/.test(k)||/^delete pods? /.test(k)) return ok?POD_RESTART_NOOP:'statefulset.apps/solr restarted\nCPU dropped for 40 seconds, then the same warnings returned.\nThe soft-commit setting lives in ZooKeeper (configoverlay.json) and survives restarts.';
+      return null;
+    }
+    const cu=c.curl;
+    if(!cu) return null;
+    if(cu.bad) return cu.bad;
+    if(cu.err) return cu.err;
+    if(/\/admin\/metrics/.test(cu.path)) return J(Object.assign(hdr(9),{metrics:{'solr.core.products.shard1.replica_n2':{'UPDATE.updateHandler.autoCommits':94,'UPDATE.updateHandler.softAutoCommits':ok?312:41822,'UPDATE.updateHandler.commits':ok?418:41930,'UPDATE.updateHandler.docsPending':0,'SEARCHER.searcher.warmupTime':ok?410:2310}}}));
+    if(/\/solr\/products\/config\/overlay$/.test(cu.path)) return J(Object.assign(hdr(1),{overlay:ok||s.soft!==100?{props:{updateHandler:{autoSoftCommit:{maxTime:s.soft}}}}:{}}));
+    if(/\/solr\/products\/config(\/updateHandler)?$/.test(cu.path)&&!cu.post){
+      const uh={class:'solr.DirectUpdateHandler2',autoCommit:{maxTime:15000,openSearcher:false},autoSoftCommit:{maxTime:s.soft},indexWriter:{closeWaitsForMerges:true}};
+      return J(Object.assign(hdr(2),{config:{updateHandler:uh,query:{maxWarmingSearchers:s.mws}}}));
+    }
+    if(/\/solr\/products\/config$/.test(cu.path)&&cu.post){
+      const f=cu.flat;
+      if(!/set-property/.test(f)) return J({error:{msg:'Unknown command. The Config API accepts set-property, set-user-property, add-searchcomponent ...',code:400}});
+      let m, out=[];
+      if((m=/updateHandler\.autoSoftCommit\.maxTime:(-?\d+)/.exec(f))){
+        s.soft=+m[1];
+        out.push(ok||this.solved(s)?'✓ autoSoftCommit.maxTime is now '+(s.soft===-1?'disabled':s.soft+' ms')+'. Searchers open at a sane rate; warmups finish before the next one starts.':'autoSoftCommit.maxTime is now '+s.soft+' ms. Still too aggressive: searcher churn continues.');
+      }
+      if((m=/updateHandler\.autoCommit\.maxTime:(-?\d+)/.exec(f))) out.push('autoCommit.maxTime changed. That is the hard commit (openSearcher=false); it does not open searchers, so the warnings continue.');
+      if((m=/query\.maxWarmingSearchers:(\d+)/.exec(f))){ s.mws=+m[1]; out.push('maxWarmingSearchers raised to '+s.mws+'. The warning disappears, but you only allowed more simultaneous warmups: CPU is still pegged.'); }
+      return J(hdr(37))+(out.length?'\n\n'+out.join('\n'):'');
+    }
+    return null;
+  }
+},
+
+/* 6 ------------------------------------------------------------ */
+{
+  id:'corrupt', title:'Replica won’t load after reboot', sev:'SEV-3',
+  time:'07:30 UTC', source:'On-call engineer',
+  body:'A node was rebooted by the cloud provider overnight. Every pod is Running, but the products collection has one replica that never came back and shows as down. Search results are fine; nobody wants a second failure on shard1.',
+  facts:'Namespace search · StatefulSet solr (3 pods) · ZooKeeper zk (3 pods) · collection products (2 shards x 2 replicas)',
+  pods:['solr-0','solr-1','solr-2','zk-0','zk-1','zk-2'],
+  init:()=>({shards:{
+    shard1:{range:'80000000-ffffffff',replicas:{core_node1:rep('products_shard1_replica_n1',0,'down'),core_node2:rep('products_shard1_replica_n2',1,'active',true)}},
+    shard2:{range:'0-7fffffff',replicas:{core_node3:rep('products_shard2_replica_n3',2,'active',true),core_node4:rep('products_shard2_replica_n4',0,'active')}}
+  }, next:5}),
+  solved(s){
+    const r=Object.values(s.shards.shard1.replicas);
+    return r.every(x=>x.state==='active') && r.length>=2;
+  },
+  hints:[
+    'The pod is up, so ask Solr which cores failed: kubectl logs solr-0 and curl localhost:8983/solr/admin/cores?action=STATUS.',
+    'CorruptIndexException with a checksum failure means the files on this replica\'s disk are bad. shard1 has another healthy replica on solr-1, so no data is at risk. Repairing the segments in place would drop documents.',
+    'Remove the broken replica with the Collections API (DELETEREPLICA, shard1, replica=core_node1) and then create a new one with ADDREPLICA for shard1. The new replica copies its index from the leader.'
+  ],
+  debrief:{
+    cause:'The hard reboot interrupted a write and left a Lucene segment file (_5k.cfs) with a bad checksum. The core cannot open its index, so it never registered as active, while the pod and the other core on it stayed healthy. SolrCloud keeps a full copy on the leader, so the damaged copy is disposable.',
+    fix:['kubectl logs solr-0','curl "http://localhost:8983/solr/admin/collections?action=CLUSTERSTATUS&collection=products"','curl "http://localhost:8983/solr/admin/collections?action=DELETEREPLICA&collection=products&shard=shard1&replica=core_node1"','curl "http://localhost:8983/solr/admin/collections?action=ADDREPLICA&collection=products&shard=shard1"'],
+    prevent:['Run at least two replicas of every shard, so a bad copy can always be rebuilt from a peer.','Prefer ADDREPLICA before DELETEREPLICA when you only have two replicas, so you never run with a single copy.','Give pods a generous terminationGracePeriodSeconds and a preStop hook so Solr can commit and close cleanly.']
+  },
+  handle(c,s){
+    const k=c.kube;
+    const bad=s.shards.shard1.replicas.core_node1;
+    if(k){
+      if(/^get (pods?|po)\b/.test(k)) return table(['NAME','READY','STATUS','RESTARTS','AGE'],[['solr-0','1/1','Running','1','14h'],['solr-1','1/1','Running','0','2d'],['solr-2','1/1','Running','0','2d'],['zk-0','1/1','Running','0','9d'],['zk-1','1/1','Running','0','9d'],['zk-2','1/1','Running','0','9d']]);
+      if(/^logs\b/.test(k)){
+        const p=(/(solr-\d)/.exec(k)||[0,'solr-0'])[1];
+        if(p!=='solr-0'||!bad) return 'INFO  (qtp1-3) [c:products s:shard1] ShardLeaderElectionContext I am the leader\nINFO  (qtp1-9) [products] webapp=/solr path=/select hits=21 status=0 QTime=12';
+        return ['INFO  (main) CoreContainer Loading cores into CoreContainer','ERROR (coreLoadExecutor-12-thread-1) [c:products s:shard1 r:core_node1 x:products_shard1_replica_n1] CoreContainer Error waiting for SolrCore to be loaded on startup','org.apache.solr.common.SolrException: Unable to create core [products_shard1_replica_n1]','Caused by: org.apache.lucene.index.CorruptIndexException: checksum failed (hardware problem?) : expected=3c8f1a20 actual=9d0b44e1 (resource=BufferedChecksumIndexInput(MMapIndexInput(path="/var/solr/data/products_shard1_replica_n1/data/index/_5k.cfs")))','INFO  (coreLoadExecutor-12-thread-2) [c:products s:shard2 r:core_node4] SolrCore Opening new SolrCore ... done'].join('\n');
+      }
+      if(/^top\b/.test(k)) return table(['NAME','CPU(cores)','MEMORY(bytes)'],[['solr-0','95m','2104Mi'],['solr-1','188m','2310Mi'],['solr-2','176m','2290Mi']]);
+      if(/^rollout restart/.test(k)||/^delete pods? /.test(k)) return bad?'statefulset.apps/solr restarted\nsolr-0 came back and failed to load products_shard1_replica_n1 again. The corruption is on disk, not in memory.':POD_RESTART_NOOP;
+      return null;
+    }
+    const sh=c.sh||'';
+    if(/CheckIndex/.test(sh)){
+      if(c.pod!=='solr-0') return 'Opening index @ /var/solr/data/products_shard2_replica_n4/data/index\nNo problems were detected with this index.';
+      const base='Opening index @ /var/solr/data/products_shard1_replica_n1/data/index\n\n 1 of 4: name=_5k maxDoc=212044\n    test: check index.....FAILED\n    ERROR: org.apache.lucene.index.CorruptIndexException: checksum failed';
+      if(/-exorcise/.test(sh)) return base+'\n\nWARNING: 1 broken segments (containing 212044 documents) detected\nWARNING: would write new segments file, and 212044 documents would be lost\nWriting... OK\n\n(The core would now load, but it is missing 212,044 documents that its leader has.\n The replica and its leader disagree, which is worse than a clean rebuild.)';
+      return base+'\n\nWARNING: 1 broken segments (containing 212044 documents) detected\nWARNING: would remove these segments with -exorcise';
+    }
+    if(/^bin\/solr healthcheck|^solr healthcheck/.test(sh)) return ['Collection: products','shard1  leader: products_shard1_replica_n2  replicas: '+(bad?'1 active, 1 DOWN (core_node1)':'all active'),'shard2  leader: products_shard2_replica_n3  replicas: 2 active'].join('\n');
+    if(/^ls\b/.test(sh)&&/data/.test(sh)) return Object.keys(s.shards).reduce((a,k2)=>a.concat(Object.values(s.shards[k2].replicas).filter(r=>r.node_name.indexOf('solr-0')===0).map(r=>r.core)),[]).join('\n')+'\nsolr.xml';
+    if(/^rm\b/.test(sh)&&/products_shard1_replica_n1/.test(sh)) return '(The directory is gone, but ZooKeeper still lists core_node1 in the collection state as down.\n Clean it up through the Collections API so the cluster state matches.)';
+    const cu=c.curl;
+    if(!cu) return null;
+    if(cu.bad) return cu.bad;
+    if(cu.err) return cu.err;
+    if(cu.path==='/solr/admin/cores'){
+      const st={};
+      Object.values(s.shards).forEach(sd=>Object.values(sd.replicas).forEach(r=>{ if(r.node_name.indexOf('solr-0')===0&&r.state!=='down') st[r.core]={name:r.core,uptime:4180000,index:{numDocs:1284391,sizeInBytes:4731044221}}; }));
+      return J(Object.assign(hdr(5),{initFailures:bad?{products_shard1_replica_n1:'org.apache.solr.common.SolrException:org.apache.solr.common.SolrException: Unable to create core [products_shard1_replica_n1] Caused by: org.apache.lucene.index.CorruptIndexException: checksum failed (hardware problem?)'}:{},status:st}));
+    }
+    if(cu.path==='/solr/admin/collections'){
+      const a=act(c), q=cu.q;
+      if(a==='CLUSTERSTATUS') return statusJSON(s.shards,q.shard);
+      if(a==='LIST') return J(Object.assign(hdr(1),{collections:['products']}));
+      if(a==='REQUESTRECOVERY') return J({error:{msg:'No such core: '+(q.core||'(none)')+'. The core failed to load, so there is nothing to recover. Replace the replica instead.',code:400}});
+      if(a==='ADDREPLICA'){
+        if(q.collection!=='products'||!/^shard[12]$/.test(q.shard||'')) return J({error:{msg:'Required parameters: collection and shard (shard1 or shard2)',code:400}});
+        const id='core_node'+(s.next++), core='products_'+q.shard+'_replica_n'+(s.next-1);
+        const pod=/solr-(\d)/.exec(q.node||'');
+        s.shards[q.shard].replicas[id]=rep(core,pod?pod[1]:'1','active');
+        return J(Object.assign(hdr(2310),{success:{[ 'solr-'+(pod?pod[1]:'1')+'.solr-headless:8983_solr' ]:{responseHeader:{status:0,QTime:2204},core:core}}}))+(q.shard==='shard1'&&this.solved(s)?'\n\n✓ '+core+' synced from the leader and is active. shard1 has two healthy replicas again.':'');
+      }
+      if(a==='DELETEREPLICA'){
+        const sd=s.shards[q.shard];
+        if(!sd||!q.replica) return J({error:{msg:'Required parameters: collection, shard and replica',code:400}});
+        if(!sd.replicas[q.replica]) return J({error:{msg:'Invalid replica : '+q.replica+' in shard/collection : '+q.shard+'/products available replicas are '+Object.keys(sd.replicas).join(','),code:400}});
+        delete sd.replicas[q.replica];
+        const left=Object.values(sd.replicas);
+        if(!left.some(r=>r.state==='active')){ s.failed='You deleted the only healthy copy of '+q.shard+'. The leftover replica cannot load, so that shard’s data is gone.'; }
+        else if(q.shard==='shard1'&&left.length<2) return J(Object.assign(hdr(612),{success:true}))+'\nThe broken replica is gone, but shard1 now has a single copy and no redundancy.\nAdd a replica so it can survive another failure.';
+        return J(Object.assign(hdr(612),{success:true}));
+      }
+      if(a==='DELETE'||a==='DELETESHARD'){ s.failed='You deleted '+(a==='DELETE'?'the whole products collection':'a shard')+'. Everything has to be reindexed from source.'; return J(Object.assign(hdr(900),{success:true})); }
+    }
+    return null;
+  }
+}
+];
+
+/* ---------- engine ---------- */
+const HELP=[
+ 'This is a simulated bastion host with kubectl and curl against the staging-search cluster.',
+ '  kubectl get|describe|logs|top|set|patch|rollout|delete ...',
+ '  kubectl exec <pod> -- <command>     run df, du, ls, rm, nslookup, curl ... inside a pod',
+ '  curl "http://localhost:8983/solr/..."   Solr APIs (works from the bastion or via exec)',
+ '  hint     reveal the next hint (-15 points each)',
+ '  alert    show the incident brief again',
+ '  clear    clear the screen',
+ 'Read the alert, investigate, then fix it. The incident closes itself when the cluster is healthy.'
+].join('\n');
+
+const STORE='solr-incident-room-v1';
+let saved={};
+try{ saved=JSON.parse(localStorage.getItem(STORE)||'{}')||{}; }catch(e){ saved={}; }
+function persist(){ try{ localStorage.setItem(STORE,JSON.stringify(saved)); }catch(e){} }
+
+const runs={};
+function fresh(def){ return {state:def.init(), lines:[], hist:[], hi:0, hints:0, cmds:0, done:false, failed:false, score:0}; }
+INCIDENTS.forEach(d=>{ runs[d.id]=fresh(d); });
+let cur=INCIDENTS[0];
+
+const $=id=>document.getElementById(id);
+const out=$('out'), input=$('cmd');
+
+function cls(line){
+  if(/^✓/.test(line)) return 'ok';
+  if(/(\bERROR\b|\bSEVERE\b|Exception|CrashLoopBackOff|OOMKilled|NXDOMAIN|FAILED|No space left|"state": "down"|"error"|\bKilled$|not found|Connection refused|Forbidden)/.test(line)) return 'err';
+  if(/\b(WARN|WARNING|Warning)\b|recovering/.test(line)) return 'warn';
+  return '';
+}
+function addLine(text,c,store){
+  const r=runs[cur.id];
+  if(store!==false) r.lines.push({t:text,c:c||''});
+  const d=document.createElement('div');
+  if(c) d.className=c;
+  d.textContent=text;
+  out.appendChild(d);
+}
+function addBlock(text,plain){
+  String(text).split('\n').forEach(l=>addLine(l,plain?'':cls(l)));
+}
+function scroll(){ out.scrollTop=out.scrollHeight; }
+
+function buildCtx(raw){
+  let c=raw.replace(/\s(?:-n|--namespace)(?:=|\s)\S+/g,'').replace(/\s(?:-it|-ti|-i|-t|--tty|--stdin)(?=\s|$)/g,'');
+  const ctx={raw:c,kube:null,pod:null,sh:null,curl:null,bare:false,err:null};
+  let m;
+  if(/^kubectl\b/.test(c)){
+    if((m=/^kubectl exec\s+(.*?)\s*--\s+(.+)$/.exec(c))){ ctx.pod=(m[1].match(/[a-z]+-\d+/)||[null])[0]; ctx.sh=m[2]; }
+    else if(/^kubectl exec\b/.test(c)) ctx.err='error: you must specify at least one command for the container (kubectl exec <pod> -- <command>)';
+    else ctx.kube=c.replace(/^kubectl\s*/,'');
+  } else { ctx.sh=c; ctx.bare=true; }
+  if(ctx.sh){
+    ctx.sh=ctx.sh.replace(/^(?:sh|bash)\s+-c\s+/,'').replace(/^(["'])([\s\S]*)\1$/,'$2').trim();
+    ctx.curl=parseCurl(ctx.sh);
+  }
+  return ctx;
+}
+const SHELL_CMDS=['ls','cat','df','du','rm','curl','tail','head','grep','ps','top','free','env','whoami','nslookup','dig','echo','find','java','pwd'];
+function generic(c){
+  if(c.err) return c.err;
+  if(c.kube!==null){
+    const v=c.kube.split(' ')[0];
+    if(v==='edit') return '(simulator) Interactive editors are not available here.\nUse kubectl set env, kubectl set resources, kubectl patch or kubectl scale instead.';
+    if(v==='delete'&&/pods?\s+(\S+)/.test(c.kube)) return 'pod "'+/pods?\s+(\S+)/.exec(c.kube)[1]+'" deleted\n(The StatefulSet recreated it with the same configuration. Nothing changed.)';
+    if(v==='rollout') return 'statefulset.apps/solr restarted\n(Nothing in the configuration changed, so the problem is still there.)';
+    if(['get','describe','logs','top','set','patch','scale','apply','cordon','drain','delete'].indexOf(v)>=0) return '(simulator) That is a valid command, but it has nothing useful to show in this incident.\nTry "help" or "hint".';
+    if(!v) return 'kubectl controls the Kubernetes cluster manager. Try: kubectl get pods';
+    return 'error: unknown command "'+v+'" for "kubectl"';
+  }
+  const w=(c.sh||'').split(' ')[0];
+  if(SHELL_CMDS.indexOf(w)>=0) return '(simulator) That command is not modelled for this incident. Try "help" or "hint".';
+  return 'bash: '+w+': command not found';
+}
+function run(raw){
+  const r=runs[cur.id], s=r.state;
+  const c=buildCtx(raw);
+  if(r.failed) return {plain:'This incident was closed as failed. Press "Reset incident" to try again.'};
+  if(c.pod && cur.pods.indexOf(c.pod)<0) return 'Error from server (NotFound): pods "'+c.pod+'" not found';
+  const res=cur.handle(c,s);
+  if(res!=null) return res;
+  return generic(c);
+}
+
+function submit(raw){
+  raw=raw.trim().replace(/\s+/g,' ');
+  if(!raw) return;
+  const r=runs[cur.id];
+  r.hist.push(raw); r.hi=r.hist.length;
+  addLine('$ '+raw,'p');
+  if(raw==='help'||raw==='?') addBlock(HELP,true);
+  else if(raw==='clear'){ r.lines=[]; out.textContent=''; }
+  else if(raw==='hint') giveHint();
+  else if(raw==='alert'||raw==='brief') addBlock(cur.sev+' '+cur.title+'\n'+cur.body,true);
+  else {
+    r.cmds++;
+    const res=run(raw);
+    if(res && typeof res==='object') addBlock(res.plain,true);
+    else if(res!=='' ) addBlock(res);
+    afterRun();
+  }
+  render(false);
+  scroll();
+}
+function giveHint(){
+  const r=runs[cur.id];
+  if(r.hints>=cur.hints.length){ addLine('No more hints. Reread the output of your last few commands.','warn'); return; }
+  addLine('HINT '+(r.hints+1)+'/'+cur.hints.length+' (-15 points): '+cur.hints[r.hints],'warn');
+  r.hints++;
+}
+function afterRun(){
+  const r=runs[cur.id], s=r.state;
+  if(s.failed && !r.failed){
+    r.failed=true;
+    addLine('','');
+    addLine('✗ INCIDENT FAILED: '+s.failed,'err banner');
+    addLine('Press "Reset incident" to try again.','dim');
+  } else if(!r.done && !r.failed && cur.solved(s)){
+    r.done=true;
+    r.score=Math.max(10,100-15*r.hints);
+    if(!(saved[cur.id]>=r.score)){ saved[cur.id]=r.score; persist(); }
+    addLine('','');
+    addLine('✓ INCIDENT RESOLVED. Score '+r.score+'/100 ('+r.cmds+' commands, '+r.hints+' hints).','ok banner');
+  }
+}
+
+/* ---------- rendering ---------- */
+function esc(t){ return String(t).replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
+function renderList(){
+  const ul=$('list'); ul.textContent='';
+  let total=0, n=0;
+  INCIDENTS.forEach(d=>{
+    const r=runs[d.id];
+    const best=saved[d.id];
+    if(best){ total+=best; n++; }
+    const li=document.createElement('li');
+    const b=document.createElement('button');
+    b.className='inc'; b.type='button';
+    if(d===cur) b.setAttribute('aria-current','true');
+    const state=r.failed?'<span class="pill fail">failed</span>':(r.done?'<span class="pill done">resolved '+r.score+'</span>':(best?'<span class="pill done">best '+best+'</span>':'<span>open</span>'));
+    b.innerHTML='<span class="t">'+esc(d.title)+'</span><span class="m"><span class="pill '+(d.sev==='SEV-1'?'sev1':'sev2')+'">'+d.sev+'</span>'+state+'</span>';
+    b.addEventListener('click',()=>{ cur=d; render(true); });
+    li.appendChild(b); ul.appendChild(li);
+  });
+  $('total').innerHTML='Resolved <b>'+n+'/'+INCIDENTS.length+'</b> · <b>'+total+'</b> points';
+}
+function renderBrief(){
+  const sevc=cur.sev==='SEV-1'?'sev1':'sev2';
+  $('brief').innerHTML='<div class="row"><span class="pill '+sevc+'">'+cur.sev+'</span><span>'+esc(cur.source)+'</span><span>'+esc(cur.time)+'</span></div><h2>'+esc(cur.title)+'</h2><p>'+esc(cur.body)+'</p><div class="facts">'+esc(cur.facts)+'</div>';
+}
+function renderDebrief(){
+  const r=runs[cur.id], el=$('debrief');
+  if(!(r.done||r.failed)){ el.hidden=true; el.textContent=''; return; }
+  const d=cur.debrief;
+  const li=a=>'<ul>'+a.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>';
+  el.hidden=false;
+  el.className='debrief'+(r.failed?' failed':'');
+  el.innerHTML='<h2>'+(r.failed?'What went wrong':'Debrief: '+esc(cur.title))+'</h2>'
+    +'<div><h3>Root cause</h3><p>'+esc(d.cause)+'</p></div>'
+    +'<div><h3>Commands that fix it</h3><pre>'+esc(d.fix.join('\n'))+'</pre></div>'
+    +'<div><h3>Keeping it from happening again</h3>'+li(d.prevent)+'</div>';
+}
+function render(reload){
+  const r=runs[cur.id];
+  renderList(); renderBrief(); renderDebrief();
+  if(reload){
+    out.textContent='';
+    if(!r.lines.length){
+      r.lines.push({t:'Welcome. You are on call for "'+cur.title+'".',c:'dim'},{t:'Type help for the command list, or start investigating.',c:'dim'});
+    }
+    r.lines.forEach(l=>{ const d=document.createElement('div'); if(l.c) d.className=l.c; d.textContent=l.t; out.appendChild(d); });
+    scroll();
+  }
+  const last=INCIDENTS.indexOf(cur)===INCIDENTS.length-1;
+  $('nextBtn').hidden=!r.done||last;
+  $('hintBtn').disabled=r.done||r.failed||r.hints>=cur.hints.length;
+  $('hintBtn').textContent=r.hints>=cur.hints.length?'No hints left':'Hint (−15)';
+  $('stat').textContent=(r.done?'Score '+r.score+' · ':'')+r.cmds+' commands · '+r.hints+'/'+cur.hints.length+' hints used';
+}
+
+/* ---------- wiring ---------- */
+$('form').addEventListener('submit',e=>{ e.preventDefault(); const v=input.value; input.value=''; submit(v); });
+input.addEventListener('keydown',e=>{
+  const r=runs[cur.id];
+  if(e.key==='ArrowUp'){ if(r.hi>0){ r.hi--; input.value=r.hist[r.hi]; } e.preventDefault(); }
+  else if(e.key==='ArrowDown'){ if(r.hi<r.hist.length-1){ r.hi++; input.value=r.hist[r.hi]; } else { r.hi=r.hist.length; input.value=''; } e.preventDefault(); }
+});
+$('term').addEventListener('click',e=>{ if(window.getSelection&&String(window.getSelection())) return; input.focus(); });
+$('hintBtn').addEventListener('click',()=>{ addLine('$ hint','p'); giveHint(); render(false); scroll(); input.focus(); });
+$('resetBtn').addEventListener('click',()=>{ runs[cur.id]=fresh(cur); render(true); input.focus(); });
+$('nextBtn').addEventListener('click',()=>{ const i=INCIDENTS.indexOf(cur); cur=INCIDENTS[Math.min(i+1,INCIDENTS.length-1)]; render(true); input.focus(); });
+
+render(true);
+})();
+</script>
+
+</body>
+</html>
