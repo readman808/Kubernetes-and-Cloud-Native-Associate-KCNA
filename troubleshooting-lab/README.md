@@ -13,7 +13,7 @@ Requires: docker, kind, kubectl (helm for `helm-tls`).
 ./lab.sh stop                 # delete cluster
 ```
 
-Scenarios: crashloop, imagepull, pending, service-selector, vault-secrets, helm-tls.
+Scenarios: crashloop, imagepull, pending, service-selector, vault-secrets, vault-sealed, helm-tls.
 
 Team scoring idea: 3 points per scenario, minus 1 per hint used, fastest time breaks ties.
 Add a scenario by creating `scenarios/<name>/` with `brief.md` (first line `# Title`), `setup.sh`, `check.sh` (exit 0 when fixed), `hints.txt`, `solution.md`.

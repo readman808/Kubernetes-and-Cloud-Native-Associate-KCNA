@@ -31,7 +31,7 @@ Or unzip `troubleshooting-lab.zip`.
 6. Scoring: 3 points per solved scenario, -1 per hint, fastest time breaks ties.
 7. Debrief: ask what the first command was, what signal pointed to the cause, how to prevent it.
 
-Recommended order: crashloop, imagepull, pending, service-selector, vault-secrets, helm-tls (easy to hard, about 10-20 min each).
+Recommended order: crashloop, imagepull, pending, service-selector, vault-secrets, vault-sealed, helm-tls (easy to hard, about 10-20 min each).
 
 ## 4. Scenario answer key
 | Scenario | Symptom | Diagnosis commands | Fix |
@@ -41,6 +41,7 @@ Recommended order: crashloop, imagepull, pending, service-selector, vault-secret
 | pending | Pending | `kubectl describe pod` (Insufficient cpu/memory) | `kubectl set resources deploy/worker --requests=cpu=100m,memory=64Mi` |
 | service-selector | No endpoints | `kubectl get endpoints api`, `kubectl get pods --show-labels`, `kubectl get svc api -o yaml` | Patch selector to `app=api` and targetPort to 80 |
 | vault-secrets | App logs "cannot reach" then "no secret" | `kubectl logs deploy/billing`, `kubectl get svc` | `kubectl set env deploy/billing VAULT_ADDR=http://vault:8200`, then `kubectl exec deploy/vault -- env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=root vault kv put secret/billing api_key=abc123` |
+| vault-sealed | Vault sealed; re-seals after unseal | `kubectl get pods` (RESTARTS climbing), `kubectl describe pod` (liveness probe failing on :8201), `vault status` | Patch liveness probe port to 8200; read keys from Secret `vault-init`; `vault operator unseal` twice |
 | helm-tls | ContainerCreating | `kubectl describe pod` (secret "gateway-tls-v2" not found), `helm get values gateway -n lab` | Create secret `gateway-tls-v2` (openssl + `kubectl create secret tls`) or `helm upgrade ... --set tls.secretName=<existing>` |
 
 Full commands are in each `scenarios/<name>/solution.md`.

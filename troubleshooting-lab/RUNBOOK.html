@@ -243,7 +243,8 @@ breaks ties.</li>
 cause, how to prevent it.</li>
 </ol>
 <p>Recommended order: crashloop, imagepull, pending, service-selector,
-vault-secrets, helm-tls (easy to hard, about 10-20 min each).</p>
+vault-secrets, vault-sealed, helm-tls (easy to hard, about 10-20 min
+each).</p>
 <h2 id="4-scenario-answer-key">4. Scenario answer key</h2>
 <table>
 <thead>
@@ -293,6 +294,15 @@ then
 <code>kubectl exec deploy/vault -- env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=root vault kv put secret/billing api_key=abc123</code></td>
 </tr>
 <tr class="even">
+<td>vault-sealed</td>
+<td>Vault sealed; re-seals after unseal</td>
+<td><code>kubectl get pods</code> (RESTARTS climbing),
+<code>kubectl describe pod</code> (liveness probe failing on :8201),
+<code>vault status</code></td>
+<td>Patch liveness probe port to 8200; read keys from Secret
+<code>vault-init</code>; <code>vault operator unseal</code> twice</td>
+</tr>
+<tr class="odd">
 <td>helm-tls</td>
 <td>ContainerCreating</td>
 <td><code>kubectl describe pod</code> (secret "gateway-tls-v2" not
