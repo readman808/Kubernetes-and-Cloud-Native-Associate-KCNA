@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Solr Troubleshooting Runbook</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: sticky contents column on the left, long-form reading column on the right. Stacks under 900px. */
+:root{
+  --bg:#eceff4; --panel:#ffffff; --ink:#18202e; --muted:#566178; --line:#d3d9e4;
+  --accent:#b8480f; --accent-ink:#ffffff; --accent-soft:#fbe9dd;
+  --ok:#17744a; --ok-soft:#dcf2e6; --warn:#8f5f00; --warn-soft:#faedc6; --crit:#bf3329; --crit-soft:#fbe1de;
+  --code-bg:#0e131b; --code-fg:#d5deeb; --code-dim:#7c89a0; --code-prompt:#6cb4ff;
+  --font-display:'Barlow Condensed','Arial Narrow',sans-serif;
+  --font-body:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --font-mono:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#10141b; --panel:#192029; --ink:#e5eaf2; --muted:#9aa5b8; --line:#2a3342;
+    --accent:#ff8d50; --accent-ink:#1a0e06; --accent-soft:#33241a;
+    --ok:#5fd493; --ok-soft:#173326; --warn:#f0c15f; --warn-soft:#352c14; --crit:#ff8077; --crit-soft:#3a1d1b;
+    --code-bg:#0a0d13;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#10141b; --panel:#192029; --ink:#e5eaf2; --muted:#9aa5b8; --line:#2a3342;
+  --accent:#ff8d50; --accent-ink:#1a0e06; --accent-soft:#33241a;
+  --ok:#5fd493; --ok-soft:#173326; --warn:#f0c15f; --warn-soft:#352c14; --crit:#ff8077; --crit-soft:#3a1d1b;
+  --code-bg:#0a0d13;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:16px}
+body{background:var(--bg);color:var(--ink);font:16px/1.65 var(--font-body);
+  padding-block:20px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.app{max-width:1180px;margin:0 auto}
+h1,h2,h3,h4{font-family:var(--font-display);font-weight:700;letter-spacing:.01em;margin:0;text-wrap:balance;line-height:1.1}
+h1{font-size:2.6rem}
+h2{font-size:2rem;margin-top:8px}
+h3{font-size:1.35rem}
+h4{font-family:var(--font-mono);font-size:.76rem;font-weight:500;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
+p{margin:0}
+a{color:var(--accent)}
+code{font-family:var(--font-mono);font-size:.86em;background:var(--accent-soft);padding:1px 5px;border-radius:3px;overflow-wrap:anywhere}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.hero{display:grid;gap:10px;padding-bottom:22px;border-bottom:1px solid var(--line);margin-bottom:24px}
+.hero p{max-width:68ch;color:var(--muted)}
+.hero .links{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px}
+.btn{display:inline-block;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:7px 14px;font-weight:500;text-decoration:none;color:var(--ink)}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+
+.layout{display:grid;grid-template-columns:230px minmax(0,1fr);gap:32px;align-items:start}
+.toc{position:sticky;top:16px;display:flex;flex-direction:column;gap:2px;font-size:.9rem;max-height:calc(100vh - 32px);overflow:auto}
+.toc a{text-decoration:none;color:var(--muted);padding:5px 10px;border-left:2px solid var(--line)}
+.toc a:hover{color:var(--ink);border-left-color:var(--accent)}
+.toc .grp{font-family:var(--font-mono);font-size:.7rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin:12px 0 4px;padding-left:12px}
+
+main{display:flex;flex-direction:column;gap:44px;min-width:0}
+section{display:flex;flex-direction:column;gap:16px;min-width:0}
+section>p,section>ul,section>ol{max-width:74ch}
+ul,ol{margin:0;padding-left:1.3em;display:flex;flex-direction:column;gap:6px}
+
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px 18px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.callout{border-left:3px solid var(--accent);background:var(--accent-soft);padding:10px 14px;border-radius:0 6px 6px 0;max-width:74ch}
+.callout.warn{border-color:var(--crit);background:var(--crit-soft)}
+.callout b{font-weight:600}
+
+pre.code{position:relative;margin:0;background:var(--code-bg);color:var(--code-fg);border-radius:6px;padding:12px 70px 12px 14px;overflow-x:auto;font:12.8px/1.55 var(--font-mono)}
+pre.code .c{color:var(--code-dim)}
+.copy{position:absolute;top:6px;right:6px;background:transparent;border:1px solid #2f3a4d;color:#9db0cb;border-radius:4px;font:11.5px var(--font-mono);padding:2px 8px;cursor:pointer}
+.copy:hover{color:#fff;border-color:#6cb4ff}
+
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+table{border-collapse:collapse;width:100%;min-width:560px;font-size:.92rem}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:var(--font-mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:500}
+tr:last-child td{border-bottom:0}
+
+.rb{border-top:3px solid var(--accent);padding-top:18px;gap:18px}
+.rb .meta{display:flex;flex-wrap:wrap;gap:8px 14px;font-family:var(--font-mono);font-size:.78rem;color:var(--muted);align-items:center}
+.pill{display:inline-block;font-family:var(--font-mono);font-size:.72rem;font-weight:500;padding:1px 7px;border-radius:3px;letter-spacing:.04em}
+.pill.sev1{background:var(--crit-soft);color:var(--crit)}
+.pill.sev2{background:var(--warn-soft);color:var(--warn)}
+.steps{counter-reset:s;list-style:none;padding:0;gap:14px}
+.steps>li{counter-increment:s;display:grid;grid-template-columns:28px minmax(0,1fr);gap:10px}
+.steps>li::before{content:counter(s);width:24px;height:24px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font:600 .8rem/24px var(--font-mono);text-align:center;margin-top:2px}
+.steps>li>div{display:flex;flex-direction:column;gap:8px;min-width:0}
+.cols{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.do h4{color:var(--ok)} .dont h4{color:var(--crit)}
+svg text{font-family:var(--font-mono)}
+.diagram{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;overflow-x:auto}
+.diagram svg{display:block;min-width:620px;width:100%;height:auto}
+
+@media (max-width:900px){
+  .layout{grid-template-columns:minmax(0,1fr)}
+  .toc{position:static;max-height:none;flex-direction:row;flex-wrap:wrap;gap:6px}
+  .toc a{border:1px solid var(--line);border-radius:4px;background:var(--panel);padding:3px 9px;font-size:.82rem}
+  .toc .grp{width:100%;margin:8px 0 0;padding:0}
+  .grid2,.cols{grid-template-columns:minmax(0,1fr)}
+  h1{font-size:2rem}
+}
+</style>
+
+</head>
+<body>
+
+
+<div class="app">
+<header class="hero">
+  <h4>Companion to the Solr Incident Room</h4>
+  <h1>Solr Troubleshooting Runbook</h1>
+  <p>How SolrCloud works on Kubernetes, a repeatable way to investigate, and a step-by-step procedure for each of the six incidents in the simulator. Read the concepts once, then use the procedures as a field guide.</p>
+  <div class="links"><a class="btn primary" href="solr-troubleshooting.html">Open the simulator</a><a class="btn" href="#method">Jump to the method</a><a class="btn" href="#cheatsheet">Command cheat sheet</a></div>
+</header>
+
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <span class="grp">Foundations</span>
+  <a href="#concepts">SolrCloud in 5 minutes</a>
+  <a href="#k8s">Solr on Kubernetes</a>
+  <a href="#method">The method</a>
+  <a href="#triage">Symptom to first command</a>
+  <span class="grp">Procedures</span>
+  <a href="#oom">Pod keeps restarting</a>
+  <a href="#leader">Shard with no leader</a>
+  <a href="#zk">Pods never Ready</a>
+  <a href="#disk">Disk full</a>
+  <a href="#searchers">Slow queries, CPU pinned</a>
+  <a href="#corrupt">Corrupt replica</a>
+  <span class="grp">Reference</span>
+  <a href="#cheatsheet">Command cheat sheet</a>
+  <a href="#glossary">Glossary</a>
+</nav>
+
+<main>
+
+<section id="concepts">
+  <h2>SolrCloud in 5 minutes</h2>
+  <p>Solr is a search server built on the Lucene library. In <b>SolrCloud</b> mode, several Solr nodes cooperate as one cluster. Almost every incident below comes down to which of these building blocks is unhealthy.</p>
+  <div class="diagram">
+  <svg viewBox="0 0 760 330" role="img" aria-label="Diagram: a ZooKeeper ensemble coordinates three Solr nodes. Collection products has two shards, each with two replicas spread over the nodes.">
+    <rect x="20" y="14" width="720" height="62" rx="8" fill="var(--accent-soft)" stroke="var(--accent)"/>
+    <text x="36" y="38" font-size="13" font-weight="500" fill="var(--ink)">ZooKeeper ensemble (zk-0, zk-1, zk-2)</text>
+    <text x="36" y="60" font-size="11.5" fill="var(--muted)">cluster state, live nodes, leader election, config sets</text>
+    <line x1="130" y1="76" x2="130" y2="116" stroke="var(--muted)" stroke-dasharray="4 3"/>
+    <line x1="380" y1="76" x2="380" y2="116" stroke="var(--muted)" stroke-dasharray="4 3"/>
+    <line x1="630" y1="76" x2="630" y2="116" stroke="var(--muted)" stroke-dasharray="4 3"/>
+
+    <rect x="20" y="116" width="220" height="196" rx="8" fill="var(--panel)" stroke="var(--line)"/>
+    <text x="36" y="140" font-size="13" font-weight="500" fill="var(--ink)">solr-0 (pod + PVC)</text>
+    <rect x="36" y="154" width="188" height="64" rx="5" fill="var(--ok-soft)" stroke="var(--ok)"/>
+    <text x="46" y="176" font-size="11.5" fill="var(--ink)">shard1 / replica n1</text><text x="46" y="196" font-size="11.5" fill="var(--ok)">LEADER</text>
+    <rect x="36" y="230" width="188" height="64" rx="5" fill="var(--panel)" stroke="var(--line)"/>
+    <text x="46" y="252" font-size="11.5" fill="var(--ink)">shard2 / replica n4</text><text x="46" y="272" font-size="11.5" fill="var(--muted)">follower</text>
+
+    <rect x="270" y="116" width="220" height="196" rx="8" fill="var(--panel)" stroke="var(--line)"/>
+    <text x="286" y="140" font-size="13" font-weight="500" fill="var(--ink)">solr-1 (pod + PVC)</text>
+    <rect x="286" y="154" width="188" height="64" rx="5" fill="var(--panel)" stroke="var(--line)"/>
+    <text x="296" y="176" font-size="11.5" fill="var(--ink)">shard1 / replica n2</text><text x="296" y="196" font-size="11.5" fill="var(--muted)">follower</text>
+
+    <rect x="520" y="116" width="220" height="196" rx="8" fill="var(--panel)" stroke="var(--line)"/>
+    <text x="536" y="140" font-size="13" font-weight="500" fill="var(--ink)">solr-2 (pod + PVC)</text>
+    <rect x="536" y="154" width="188" height="64" rx="5" fill="var(--ok-soft)" stroke="var(--ok)"/>
+    <text x="546" y="176" font-size="11.5" fill="var(--ink)">shard2 / replica n3</text><text x="546" y="196" font-size="11.5" fill="var(--ok)">LEADER</text>
+  </svg>
+  </div>
+  <div class="grid2">
+    <div class="card"><h3>Collection</h3><p>A logical index, such as <code>products</code>. Clients talk to the collection, never to individual servers.</p></div>
+    <div class="card"><h3>Shard</h3><p>A slice of the collection's documents. More shards means more data and more write throughput.</p></div>
+    <div class="card"><h3>Replica and core</h3><p>A copy of a shard. Each replica lives on one node as a <b>core</b>, a Lucene index directory on disk. More replicas means more query capacity and redundancy.</p></div>
+    <div class="card"><h3>Leader</h3><p>One replica per shard is elected leader. Every update to the shard goes through it. <b>No leader means no writes</b> to that shard.</p></div>
+    <div class="card"><h3>ZooKeeper</h3><p>Stores the cluster state and runs elections. Without a ZooKeeper connection a Solr node cannot serve as part of the cluster.</p></div>
+    <div class="card"><h3>Commits and searchers</h3><p>New documents become searchable only after a commit opens a new <b>searcher</b>, which warms its caches. A <b>hard commit</b> makes data durable. A <b>soft commit</b> only makes it visible.</p></div>
+  </div>
+  <div class="callout"><b>The rule that explains most incidents:</b> a pod being Running says nothing about whether its cores are healthy, whether it reached ZooKeeper, or whether a shard has a leader. Check each layer separately.</div>
+</section>
+
+<section id="k8s">
+  <h2>Solr on Kubernetes</h2>
+  <p>The simulator uses the layout a Helm chart or the Solr Operator produces. Know which Kubernetes object holds each piece of state, because the fix usually lives there.</p>
+  <div class="tablewrap"><table>
+    <tr><th>Thing</th><th>Kubernetes object</th><th>Why it matters</th></tr>
+    <tr><td>Solr nodes</td><td>StatefulSet <code>solr</code> (pods <code>solr-0..2</code>)</td><td>Stable names and stable storage. Change settings with <code>kubectl set</code> or <code>patch</code> on the StatefulSet, and the pods roll.</td></tr>
+    <tr><td>Index files</td><td>PVC <code>data-solr-N</code> mounted at <code>/var/solr</code></td><td>The index lives on this volume, so it survives pod restarts and fills up independently per pod.</td></tr>
+    <tr><td>Heap and memory</td><td>env <code>SOLR_JAVA_MEM</code> and container <code>resources.limits.memory</code></td><td>The JVM heap must fit inside the container limit with room to spare.</td></tr>
+    <tr><td>ZooKeeper address</td><td>env <code>ZK_HOST</code></td><td>Resolved through DNS, so the names must match the ZooKeeper headless service.</td></tr>
+    <tr><td>Pod discovery</td><td>Headless services <code>solr-headless</code>, <code>zk-headless</code></td><td>Give each pod a DNS name such as <code>zk-0.zk-headless</code>.</td></tr>
+    <tr><td>Readiness</td><td>Readiness probe on the Solr HTTP port</td><td>A pod that cannot reach ZooKeeper reports 503 and stays 0/1 Ready.</td></tr>
+  </table></div>
+  <div class="callout warn"><b>Restarting a pod is rarely the fix.</b> A restarted pod reads the same environment, mounts the same disk and rejoins the same cluster state. It only helps if the problem lived in memory.</div>
+</section>
+
+<section id="method">
+  <h2>The method</h2>
+  <p>Work from the outside in. At each layer, run one command that proves the layer is healthy before moving to the next. Stop at the first layer that fails.</p>
+  <ol class="steps">
+    <li><div><h3>Pod</h3><p>Is it Running and Ready? Restarts? What was the last exit reason?</p><pre class="code" data-copy>kubectl get pods
+kubectl describe pod solr-0</pre></div></li>
+    <li><div><h3>Process logs</h3><p>Find the first ERROR or SEVERE after startup. Later errors are usually consequences.</p><pre class="code" data-copy>kubectl logs solr-0
+kubectl logs solr-0 --previous</pre></div></li>
+    <li><div><h3>Dependencies</h3><p>Can the pod resolve and reach ZooKeeper? Is the disk writable and not full?</p><pre class="code" data-copy>kubectl exec solr-0 -- nslookup zk-0.zk-headless
+kubectl exec solr-0 -- df -h</pre></div></li>
+    <li><div><h3>Cluster state</h3><p>Ask SolrCloud what it believes: live nodes, shards, replica states, leaders.</p><pre class="code" data-copy>curl "http://localhost:8983/solr/admin/collections?action=CLUSTERSTATUS&amp;collection=products"</pre></div></li>
+    <li><div><h3>Core and query behavior</h3><p>Which cores failed to load? How often does Solr commit? What do the metrics say?</p><pre class="code" data-copy>curl "http://localhost:8983/solr/admin/cores?action=STATUS"
+curl "http://localhost:8983/solr/admin/metrics?group=core&amp;prefix=UPDATE"</pre></div></li>
+  </ol>
+  <div class="cols">
+    <div class="card do"><h4>Do</h4><ul><li>Read before you write. Every investigation command here is read-only.</li><li>Change one thing, then verify.</li><li>Prefer the smallest, most reversible fix.</li><li>Note the time and the commands, for the post-incident review.</li></ul></div>
+    <div class="card dont"><h4>Do not</h4><ul><li>Delete anything under <code>/var/solr/data</code> to free space.</li><li>Delete a replica before you know another healthy copy exists.</li><li>Restart everything "to see if it helps".</li><li>Use a destructive Collections API call (<code>DELETE</code>, <code>DELETESHARD</code>) while diagnosing.</li></ul></div>
+  </div>
+</section>
+
+<section id="triage">
+  <h2>Symptom to first command</h2>
+  <div class="tablewrap"><table>
+    <tr><th>What you see</th><th>Likely layer</th><th>Run first</th><th>Procedure</th></tr>
+    <tr><td>CrashLoopBackOff, restarts climbing</td><td>Pod resources</td><td><code>kubectl describe pod solr-0</code></td><td><a href="#oom">Pod keeps restarting</a></td></tr>
+    <tr><td>"No registered leader was found"</td><td>Cluster state</td><td><code>action=CLUSTERSTATUS</code></td><td><a href="#leader">Shard with no leader</a></td></tr>
+    <tr><td>Running but 0/1 Ready, "not connected to ZooKeeper"</td><td>Dependency / DNS</td><td><code>kubectl logs solr-0</code></td><td><a href="#zk">Pods never Ready</a></td></tr>
+    <tr><td>"No space left on device"</td><td>Storage</td><td><code>kubectl exec solr-0 -- df -h</code></td><td><a href="#disk">Disk full</a></td></tr>
+    <tr><td>Slow queries, high CPU, "Overlapping onDeckSearchers"</td><td>Commit configuration</td><td><code>kubectl logs solr-1</code></td><td><a href="#searchers">Slow queries</a></td></tr>
+    <tr><td>One replica down, CorruptIndexException</td><td>Core / index files</td><td><code>action=STATUS</code> on cores</td><td><a href="#corrupt">Corrupt replica</a></td></tr>
+  </table></div>
+</section>
+
+<!-- ===================== 1 ===================== -->
+<section id="oom" class="rb">
+  <div class="meta"><span class="pill sev2">SEV-2</span><span>Incident 1</span><span>Layer: pod resources</span></div>
+  <h2>Pod keeps restarting</h2>
+  <div class="card"><h3>Concept: heap is not the whole process</h3><p>The JVM heap (<code>-Xmx</code>) holds Java objects. The process also needs memory for metaspace, thread stacks, direct buffers and the GC itself, so total usage is above the heap. Kubernetes enforces the container limit with the kernel OOM killer: when the process crosses it, the kernel sends SIGKILL and the container exits with code <b>137</b>. Rule of thumb: <b>limit ≥ heap × 1.3</b>. Keep extra RAM free for the OS page cache, since Lucene reads index files through it.</p></div>
+  <h4>Symptoms</h4>
+  <ul><li><code>CrashLoopBackOff</code> with a growing restart count.</li><li>Logs end abruptly, with no stack trace, often just <code>Killed</code>.</li></ul>
+  <h4>Diagnose</h4>
+  <ol class="steps">
+    <li><div><p>Confirm the pod state.</p><pre class="code" data-copy>kubectl get pods</pre></div></li>
+    <li><div><p>Read <b>Last State</b>. <code>Reason: OOMKilled</code> and <code>Exit Code: 137</code> confirm it. Note <code>Limits</code> and the <code>SOLR_JAVA_MEM</code> value.</p><pre class="code" data-copy>kubectl describe pod solr-0</pre></div></li>
+    <li><div><p>Compare the two numbers. A 1Gi limit with a 2g heap can never work.</p><pre class="code" data-copy>kubectl top pods</pre></div></li>
+  </ol>
+  <h4>Fix (pick one)</h4>
+  <pre class="code" data-copy><span class="c"># A. give the container headroom above the heap</span>
+kubectl set resources statefulset/solr --limits=memory=3Gi
+
+<span class="c"># B. or make the heap smaller than the limit</span>
+kubectl set env statefulset/solr SOLR_JAVA_MEM="-Xms512m -Xmx512m"</pre>
+  <h4>Verify</h4>
+  <ul><li><code>kubectl get pods</code> shows <code>1/1 Running</code> with the restart count no longer rising.</li><li><code>kubectl top pods</code> stays well under the limit.</li></ul>
+  <div class="cols">
+    <div class="card dont"><h4>Common mistakes</h4><ul><li>Setting the limit equal to the heap (2Gi limit, 2g heap) still gets killed.</li><li>Deleting the pod. It comes back with the same limit.</li></ul></div>
+    <div class="card do"><h4>Prevent</h4><ul><li>Set requests equal to limits for Solr.</li><li>Alert on working-set memory nearing the limit.</li></ul></div>
+  </div>
+</section>
+
+<!-- ===================== 2 ===================== -->
+<section id="leader" class="rb">
+  <div class="meta"><span class="pill sev2">SEV-2</span><span>Incident 2</span><span>Layer: cluster state</span></div>
+  <h2>Shard with no leader</h2>
+  <div class="card"><h3>Concept: leader election and recovery</h3><p>Each shard elects a leader through ZooKeeper. A replica that was offline <b>recovers</b> by syncing from the leader. If every replica of a shard restarts uncleanly, each may refuse to lead because another one might have newer data, and none can sync because there is no leader. The shard is deadlocked in <code>recovering</code>. <code>FORCELEADER</code> breaks the tie by promoting a replica and accepting that the very latest writes might be missing.</p></div>
+  <h4>Symptoms</h4>
+  <ul><li>Update errors: <code>No registered leader was found after waiting for 4000ms, collection: products slice: shard2</code>.</li><li>Queries touching that shard return 503. All pods are Running.</li></ul>
+  <h4>Diagnose</h4>
+  <ol class="steps">
+    <li><div><p>Ask for the cluster state. In the JSON, look at each shard's replicas.</p><pre class="code" data-copy>curl "http://localhost:8983/solr/admin/collections?action=CLUSTERSTATUS&amp;collection=products"</pre></div></li>
+    <li><div><p>Healthy shards have one replica with <code>"leader": "true"</code>. Here <code>shard2</code> has none and both replicas show <code>"state": "recovering"</code>.</p></div></li>
+    <li><div><p>Confirm in the logs of the nodes that host the shard.</p><pre class="code" data-copy>kubectl logs solr-1</pre></div></li>
+  </ol>
+  <h4>Fix</h4>
+  <pre class="code" data-copy>curl "http://localhost:8983/solr/admin/collections?action=FORCELEADER&amp;collection=products&amp;shard=shard2"</pre>
+  <h4>Verify</h4>
+  <ul><li>Run <code>CLUSTERSTATUS</code> again: <code>shard2</code> has a leader and its replicas are <code>active</code>.</li><li>A test update and a query against <code>/solr/products/select</code> both succeed.</li></ul>
+  <div class="cols">
+    <div class="card dont"><h4>Common mistakes</h4><ul><li><code>rollout restart</code>. The replicas come back in the same deadlock.</li><li>Adding replicas. A new replica also has nobody to sync from.</li><li>Running FORCELEADER on a healthy shard. It does nothing.</li></ul></div>
+    <div class="card do"><h4>Prevent</h4><ul><li>Roll pods one at a time, waiting for Ready between each.</li><li>Alert on any shard with no leader.</li><li>After FORCELEADER, reindex recent documents if your pipeline allows replay.</li></ul></div>
+  </div>
+</section>
+
+<!-- ===================== 3 ===================== -->
+<section id="zk" class="rb">
+  <div class="meta"><span class="pill sev1">SEV-1</span><span>Incident 3</span><span>Layer: dependency and DNS</span></div>
+  <h2>Pods Running but never Ready</h2>
+  <div class="card"><h3>Concept: Kubernetes DNS for StatefulSets</h3><p>A StatefulSet behind a <b>headless service</b> gives each pod a stable DNS name: <code>&lt;pod&gt;.&lt;service&gt;</code>, for example <code>zk-0.zk-headless</code>. Solr finds ZooKeeper only through the <code>ZK_HOST</code> string, so each name in it must match a real service and pod. A wrong name fails DNS lookup (<code>NXDOMAIN</code>), Solr cannot open a session, and the readiness probe keeps returning 503. Pod Running means the container started, not that the app is usable.</p></div>
+  <h4>Symptoms</h4>
+  <ul><li><code>0/1 Running</code> on every Solr pod, rollout stuck.</li><li>Admin UI: "Solr is not connected to ZooKeeper".</li></ul>
+  <h4>Diagnose</h4>
+  <ol class="steps">
+    <li><div><p>Read the first error in the logs. Look for <code>UnknownHostException</code> and the host Solr tried.</p><pre class="code" data-copy>kubectl logs solr-0</pre></div></li>
+    <li><div><p>List the real service names.</p><pre class="code" data-copy>kubectl get svc</pre></div></li>
+    <li><div><p>Prove which name resolves from inside the Solr pod.</p><pre class="code" data-copy>kubectl exec solr-0 -- nslookup zookeeper-0.zookeeper-headless
+kubectl exec solr-0 -- nslookup zk-0.zk-headless</pre></div></li>
+    <li><div><p>Optionally confirm ZooKeeper itself is healthy, so you do not chase it.</p><pre class="code" data-copy>kubectl exec zk-0 -- zkServer.sh status</pre></div></li>
+  </ol>
+  <h4>Fix</h4>
+  <pre class="code" data-copy>kubectl set env statefulset/solr ZK_HOST=zk-0.zk-headless:2181,zk-1.zk-headless:2181,zk-2.zk-headless:2181</pre>
+  <h4>Verify</h4>
+  <ul><li>The StatefulSet rolls and <code>kubectl get pods</code> shows <code>1/1</code> for all Solr pods.</li><li><code>CLUSTERSTATUS</code> lists all three live nodes.</li></ul>
+  <div class="cols">
+    <div class="card dont"><h4>Common mistakes</h4><ul><li>Restarting ZooKeeper. It was healthy all along.</li><li>Using port 2888 or 3888. Clients use 2181.</li><li>Listing only one ZooKeeper host. It works but is a single point of failure.</li></ul></div>
+    <div class="card do"><h4>Prevent</h4><ul><li>Generate <code>ZK_HOST</code> from the same value that names the ZooKeeper release.</li><li>Run <code>helm template</code> and diff before upgrades.</li></ul></div>
+  </div>
+</section>
+
+<!-- ===================== 4 ===================== -->
+<section id="disk" class="rb">
+  <div class="meta"><span class="pill sev2">SEV-2</span><span>Incident 4</span><span>Layer: storage</span></div>
+  <h2>Disk full</h2>
+  <div class="card"><h3>Concept: why Lucene needs free space</h3><p>A Lucene index is a set of immutable segment files. Commits write new segments and background <b>merges</b> combine small segments into larger ones, temporarily needing space for both the old and new files. A volume that is nearly full cannot merge or commit, so writes fail with <code>No space left on device</code>. Keep usage below about 80%. Each pod has its own PVC, so one hot shard can fill while its neighbours are fine.</p></div>
+  <h4>Symptoms</h4>
+  <ul><li><code>java.io.IOException: No space left on device</code> in the logs, updates return HTTP 500.</li><li>The PVC alert fires for one pod only.</li></ul>
+  <h4>Diagnose</h4>
+  <ol class="steps">
+    <li><div><p>Check usage on the suspect pod, then on a neighbour for comparison.</p><pre class="code" data-copy>kubectl exec solr-0 -- df -h
+kubectl exec solr-1 -- df -h</pre></div></li>
+    <li><div><p>See what is using the space.</p><pre class="code" data-copy>kubectl exec solr-0 -- du -sh /var/solr/*</pre></div></li>
+    <li><div><p>Decide what is safe. <code>data</code> is the live index and is off limits. <code>backups</code> and old <code>logs</code> are not live data.</p><pre class="code" data-copy>kubectl exec solr-0 -- ls -lh /var/solr/backups</pre></div></li>
+    <li><div><p>Check whether the volume can grow instead.</p><pre class="code" data-copy>kubectl get pvc
+kubectl get storageclass</pre></div></li>
+  </ol>
+  <h4>Fix (pick one)</h4>
+  <pre class="code" data-copy><span class="c"># A. remove stale backups (confirm they exist elsewhere first)</span>
+kubectl exec solr-0 -- rm -rf /var/solr/backups/*
+
+<span class="c"># B. grow the volume (needs allowVolumeExpansion: true)</span>
+kubectl patch pvc data-solr-0 -p '{"spec":{"resources":{"requests":{"storage":"40Gi"}}}}'</pre>
+  <h4>Verify</h4>
+  <ul><li><code>df -h</code> shows usage comfortably below 80%.</li><li>A test update to the collection succeeds.</li></ul>
+  <div class="cols">
+    <div class="card dont"><h4>Common mistakes</h4><ul><li>Deleting anything inside <code>/var/solr/data</code>. That destroys the shard's index.</li><li>Clearing only logs. It freed 100 MB of 6 GB needed.</li><li>Shrinking a PVC. Kubernetes only allows growth.</li></ul></div>
+    <div class="card do"><h4>Prevent</h4><ul><li>Send backups to object storage.</li><li>Alert at 80%.</li><li>Verify the StorageClass allows expansion before you need it.</li></ul></div>
+  </div>
+</section>
+
+<!-- ===================== 5 ===================== -->
+<section id="searchers" class="rb">
+  <div class="meta"><span class="pill sev2">SEV-3</span><span>Incident 5</span><span>Layer: commit configuration</span></div>
+  <h2>Slow queries, CPU pinned</h2>
+  <div class="card"><h3>Concept: commits, searchers and warming</h3><p>A <b>hard commit</b> (<code>autoCommit</code>) flushes data to disk for durability and, with <code>openSearcher=false</code>, does not change what queries see. A <b>soft commit</b> (<code>autoSoftCommit</code>) opens a new searcher so new documents become visible. Every new searcher <b>warms</b> its caches by replaying queries, which costs CPU. If searchers are opened faster than they finish warming, Solr logs <code>Overlapping onDeckSearchers</code> and queries slow down. The cure is to open searchers less often, matching the freshness you actually need.</p></div>
+  <h4>Symptoms</h4>
+  <ul><li>p95 latency jumps; one or more nodes at very high CPU.</li><li>Logs repeat <code>PERFORMANCE WARNING: Overlapping onDeckSearchers=2</code> many times a second.</li></ul>
+  <h4>Diagnose</h4>
+  <ol class="steps">
+    <li><div><p>Find the busy node and read its logs.</p><pre class="code" data-copy>kubectl top pods
+kubectl logs solr-1</pre></div></li>
+    <li><div><p>Check the update handler settings. Here <code>autoSoftCommit.maxTime</code> is 100 ms.</p><pre class="code" data-copy>curl localhost:8983/solr/products/config/updateHandler</pre></div></li>
+    <li><div><p>Confirm with metrics: a huge <code>softAutoCommits</code> count.</p><pre class="code" data-copy>curl "localhost:8983/solr/admin/metrics?group=core&amp;prefix=UPDATE"</pre></div></li>
+  </ol>
+  <h4>Fix</h4>
+  <p>Change the setting with the Config API. It is stored in ZooKeeper, so it survives restarts and applies to every replica.</p>
+  <pre class="code" data-copy>curl -X POST -H 'Content-type:application/json' -d '{"set-property":{"updateHandler.autoSoftCommit.maxTime":60000}}' http://localhost:8983/solr/products/config</pre>
+  <h4>Verify</h4>
+  <ul><li>The overlapping-searcher warnings stop and CPU falls.</li><li><code>/config/updateHandler</code> shows the new value; <code>/config/overlay</code> lists it as an override.</li></ul>
+  <div class="cols">
+    <div class="card dont"><h4>Common mistakes</h4><ul><li>Raising <code>maxWarmingSearchers</code>. The warning goes away, but more warmups run at once and CPU stays high.</li><li>Changing <code>autoCommit</code> (the hard commit). It does not open searchers.</li><li>Restarting pods. The setting comes back from ZooKeeper.</li></ul></div>
+    <div class="card do"><h4>Prevent</h4><ul><li>Choose the soft-commit interval from the real freshness requirement.</li><li>Do not send <code>commit=true</code> on every indexing batch.</li><li>Watch the soft-commit rate as a metric.</li></ul></div>
+  </div>
+</section>
+
+<!-- ===================== 6 ===================== -->
+<section id="corrupt" class="rb">
+  <div class="meta"><span class="pill sev2">SEV-3</span><span>Incident 6</span><span>Layer: core and index files</span></div>
+  <h2>Corrupt replica</h2>
+  <div class="card"><h3>Concept: replicas are disposable copies</h3><p>Each replica holds a full copy of its shard, and a new replica can copy the index from the leader. So when a core's files are damaged and another healthy replica exists, the right fix is to <b>replace</b> the damaged replica, not repair it. Tools such as Lucene's <code>CheckIndex -exorcise</code> drop broken segments and the documents in them, leaving this replica inconsistent with its leader. Corruption (<code>CorruptIndexException</code>, bad checksum) usually follows an unclean shutdown or a disk problem.</p></div>
+  <h4>Symptoms</h4>
+  <ul><li>All pods Running, but one replica is <code>down</code> and never recovers.</li><li>Logs: <code>Unable to create core</code> caused by <code>CorruptIndexException: checksum failed</code>.</li></ul>
+  <h4>Diagnose</h4>
+  <ol class="steps">
+    <li><div><p>Find the failing core in the pod logs.</p><pre class="code" data-copy>kubectl logs solr-0</pre></div></li>
+    <li><div><p>List failed cores on that node.</p><pre class="code" data-copy>curl "localhost:8983/solr/admin/cores?action=STATUS"</pre></div></li>
+    <li><div><p><b>Check that a healthy copy exists.</b> In <code>CLUSTERSTATUS</code>, the same shard must have another replica that is <code>active</code>. Note the failed replica's name (here <code>core_node1</code>).</p><pre class="code" data-copy>curl "localhost:8983/solr/admin/collections?action=CLUSTERSTATUS&amp;collection=products"</pre></div></li>
+  </ol>
+  <h4>Fix</h4>
+  <pre class="code" data-copy><span class="c"># 1. remove the broken replica</span>
+curl "localhost:8983/solr/admin/collections?action=DELETEREPLICA&amp;collection=products&amp;shard=shard1&amp;replica=core_node1"
+
+<span class="c"># 2. create a fresh one; it copies the index from the leader</span>
+curl "localhost:8983/solr/admin/collections?action=ADDREPLICA&amp;collection=products&amp;shard=shard1"</pre>
+  <div class="callout">If a shard has only two replicas, run <code>ADDREPLICA</code> <b>first</b> and delete the broken one afterward. That way you never run with a single copy.</div>
+  <h4>Verify</h4>
+  <ul><li><code>CLUSTERSTATUS</code>: shard1 has two <code>active</code> replicas and one leader.</li><li>Document counts match across replicas.</li></ul>
+  <div class="cols">
+    <div class="card dont"><h4>Common mistakes</h4><ul><li>Deleting the <b>healthy</b> replica by mistake. Always match the replica name to the failing core.</li><li>Using <code>CheckIndex -exorcise</code>. It loses documents.</li><li>Removing the core directory by hand. ZooKeeper still lists the replica.</li></ul></div>
+    <div class="card do"><h4>Prevent</h4><ul><li>Always run at least two replicas per shard.</li><li>Give pods a long termination grace period so Solr shuts down cleanly.</li></ul></div>
+  </div>
+</section>
+
+<section id="cheatsheet">
+  <h2>Command cheat sheet</h2>
+  <div class="tablewrap"><table>
+    <tr><th>Goal</th><th>Command</th></tr>
+    <tr><td>Pod status and restarts</td><td><code>kubectl get pods</code></td></tr>
+    <tr><td>Why a pod last stopped</td><td><code>kubectl describe pod solr-0</code></td></tr>
+    <tr><td>Logs, including the crashed container</td><td><code>kubectl logs solr-0 [--previous]</code></td></tr>
+    <tr><td>CPU and memory use</td><td><code>kubectl top pods</code></td></tr>
+    <tr><td>Change env or memory limit on the StatefulSet</td><td><code>kubectl set env|resources statefulset/solr ...</code></td></tr>
+    <tr><td>Grow a volume</td><td><code>kubectl patch pvc data-solr-0 -p '{...}'</code></td></tr>
+    <tr><td>Run a command in a pod</td><td><code>kubectl exec solr-0 -- df -h</code></td></tr>
+    <tr><td>Cluster layout and leaders</td><td><code>.../admin/collections?action=CLUSTERSTATUS</code></td></tr>
+    <tr><td>Promote a leader</td><td><code>.../admin/collections?action=FORCELEADER&amp;collection=C&amp;shard=S</code></td></tr>
+    <tr><td>Add or remove a replica</td><td><code>action=ADDREPLICA</code> / <code>action=DELETEREPLICA&amp;replica=core_nodeN</code></td></tr>
+    <tr><td>Cores and load failures on a node</td><td><code>.../admin/cores?action=STATUS</code></td></tr>
+    <tr><td>Metrics</td><td><code>.../admin/metrics?group=core&amp;prefix=UPDATE</code></td></tr>
+    <tr><td>View or change collection config</td><td><code>.../solr/products/config</code> (GET) / POST with <code>set-property</code></td></tr>
+  </table></div>
+</section>
+
+<section id="glossary">
+  <h2>Glossary</h2>
+  <div class="tablewrap"><table>
+    <tr><th>Term</th><th>Meaning</th></tr>
+    <tr><td>Autowarm</td><td>Replaying recent queries or cache entries into a new searcher so first queries are fast.</td></tr>
+    <tr><td>Config API</td><td>HTTP endpoint that changes a collection's configuration at runtime, stored in ZooKeeper.</td></tr>
+    <tr><td>Core</td><td>One Lucene index directory on a node, the on-disk form of a replica.</td></tr>
+    <tr><td>Headless service</td><td>A Kubernetes service with no virtual IP that gives each StatefulSet pod its own DNS name.</td></tr>
+    <tr><td>OOMKilled</td><td>The container was killed by the kernel for exceeding its memory limit (exit code 137).</td></tr>
+    <tr><td>Overlay</td><td>The set of config overrides made through the Config API (<code>configoverlay.json</code>).</td></tr>
+    <tr><td>Recovery</td><td>A replica catching up from its shard leader, by replaying updates or copying the index.</td></tr>
+    <tr><td>Segment</td><td>An immutable file group inside a Lucene index. Merges combine segments.</td></tr>
+    <tr><td>Searcher</td><td>A point-in-time view of the index that serves queries. A new one is opened by a commit.</td></tr>
+  </table></div>
+  <p class="callout">Ready to practise? <a href="solr-troubleshooting.html">Open the Solr Incident Room</a> and fix all six incidents.</p>
+</section>
+
+</main>
+</div>
+</div>
+
+<script>
+(function(){
+  document.querySelectorAll('pre.code[data-copy]').forEach(function(pre){
+    var text=pre.textContent;
+    var b=document.createElement('button');
+    b.type='button'; b.className='copy'; b.textContent='Copy';
+    b.addEventListener('click',function(){
+      function done(){ b.textContent='Copied'; setTimeout(function(){b.textContent='Copy';},1400); }
+      function fallback(){
+        var r=document.createRange(); r.selectNodeContents(pre);
+        var s=window.getSelection(); s.removeAllRanges(); s.addRange(r);
+        b.textContent='Selected'; setTimeout(function(){b.textContent='Copy';},1400);
+      }
+      try{ navigator.clipboard.writeText(text).then(done,fallback); }catch(e){ fallback(); }
+    });
+    pre.appendChild(b);
+  });
+})();
+</script>
+
+</body>
+</html>
