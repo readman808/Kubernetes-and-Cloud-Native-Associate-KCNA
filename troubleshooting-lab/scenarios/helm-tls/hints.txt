@@ -1,0 +1,3 @@
+kubectl describe pod <pod>: which secret is missing? helm get values gateway -n lab shows what was set.
+Either create that secret or change the value back with helm upgrade.
+helm upgrade gateway ./troubleshooting-lab/scenarios/helm-tls/chart -n lab --reuse-values --set tls.secretName=...

@@ -1,0 +1,3 @@
+kubectl describe pod <pod>: what does the scheduler event say?
+Compare the resource requests with what kubectl describe node shows as allocatable.
+Lower the requests (e.g. cpu 100m, memory 64Mi).
