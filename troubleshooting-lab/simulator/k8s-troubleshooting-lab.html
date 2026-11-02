@@ -1,0 +1,641 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>K8s Troubleshooting Lab</title>
+<style>
+:root{--bg:#f6f8fa;--card:#fff;--fg:#1d2733;--mut:#5b6b7b;--line:#d9e0e7;--acc:#326ce5;--ok:#1a7f37;--warn:#b35900;--term:#0d1117;--termfg:#d6dde5}
+@media (prefers-color-scheme:dark){:root{--bg:#0b0f14;--card:#141a21;--fg:#e4e9ee;--mut:#9aa8b6;--line:#2a3541;--acc:#6f9bff;--ok:#3fb950;--warn:#e3a008;--term:#05080b}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}
+.wrap{max-width:980px;margin:0 auto;padding:16px}
+header{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;margin-bottom:12px}
+h1{font-size:1.4rem;margin:0}h2{font-size:1.1rem;margin:0 0 8px}
+.pill{background:var(--card);border:1px solid var(--line);border-radius:99px;padding:2px 12px;font-variant-numeric:tabular-nums}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:8px;padding:6px 12px}
+button.primary{background:var(--acc);border-color:var(--acc);color:#fff}
+button:hover{filter:brightness(1.08)}
+input[type=text]{font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--fg)}
+.tag{font-size:.75rem;border:1px solid var(--line);border-radius:6px;padding:0 6px;color:var(--mut)}
+.done{color:var(--ok);font-weight:600}
+#brief{white-space:pre-wrap}
+#term{background:var(--term);color:var(--termfg);border-radius:10px;padding:12px;height:52vh;min-height:280px;overflow-y:auto;font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+#term .cmd{color:#7ee787;margin-top:8px}#term .out{white-space:pre;overflow-x:auto}#term .sys{color:#e3b341;white-space:pre-wrap}#term .good{color:#3fb950;white-space:pre-wrap;font-weight:700}
+.inrow{display:flex;gap:8px;margin:8px 0;align-items:center}
+.inrow span{font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--mut)}
+#cmd{flex:1;min-width:0;font-family:ui-monospace,Menlo,Consolas,monospace}
+.btns{display:flex;flex-wrap:wrap;gap:8px}
+table{border-collapse:collapse;width:100%;font-size:.9rem}th,td{border-bottom:1px solid var(--line);padding:4px 8px;text-align:left}
+dialog{width:min(700px,94vw);background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:10px}
+dialog textarea{width:100%;height:46vh;font:13px/1.4 ui-monospace,Menlo,Consolas,monospace;background:var(--term);color:var(--termfg);border:0;border-radius:8px;padding:8px}
+.hidden{display:none}
+small{color:var(--mut)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>☸ K8s Troubleshooting Lab</h1>
+  <div class="btns"><span class="pill" id="who"></span><span class="pill hidden" id="timer">0:00</span><span class="pill hidden" id="pts">3 pts</span></div>
+</header>
+
+<section id="menu">
+  <div class="card">
+    <h2>Welcome</h2>
+    <p>You are on call. Each scenario drops you into a broken cluster with a short incident brief. Diagnose it with real <code>kubectl</code>, <code>helm</code> and <code>vault</code> commands and fix it. Nothing here touches a real cluster, so you can't break anything. Everything runs in your browser, even offline.</p>
+    <p>Scoring: <b>3 points</b> per scenario, <b>-1 per hint</b>, <b>0</b> if you view the solution. Fastest time breaks ties.</p>
+    <label>Your name: <input type="text" id="name" maxlength="30" placeholder="e.g. Alex"></label>
+  </div>
+  <div class="grid" id="cards"></div>
+  <div class="card" style="margin-top:12px">
+    <h2>Your results</h2>
+    <div id="results"><small>No runs yet.</small></div>
+    <div class="btns" style="margin-top:8px"><button id="copyRes">Copy results to share with the team</button><button id="clearRes">Clear</button></div>
+  </div>
+</section>
+
+<section id="game" class="hidden">
+  <div class="card"><h2 id="gtitle"></h2><div id="brief"></div></div>
+  <div id="term" aria-live="polite"></div>
+  <div class="inrow"><span>$</span><input type="text" id="cmd" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="type a command, or help"></div>
+  <div class="btns">
+    <button id="bHint">💡 Hint (-1)</button><button class="primary" id="bCheck">✔ Check fix</button>
+    <button id="bBrief">📋 Brief</button><button id="bSol">🔓 Solution (0 pts)</button><button id="bQuit">⬅ Menu</button>
+  </div>
+  <div class="card hidden" id="win" style="margin-top:12px"></div>
+</section>
+</div>
+
+<dialog id="editor"><form method="dialog"><h2 id="etitle"></h2><textarea id="etext" spellcheck="false"></textarea>
+<div class="btns" style="margin-top:8px"><button value="save" class="primary" id="esave">Save</button><button value="cancel" id="ecancel">Cancel</button></div></form></dialog>
+<script>
+'use strict';
+/* ================= helpers ================= */
+const H=['7d9f8b6c5','6c5d8f7b4','5b8d7f6c4','84c7d9b6f','9f5c6b7d8','68d5c9f7b'];
+const RN=['x2k9q','m4tz8','p7wnc','h5rj2','t9vdl','c8bqz','w3nxk','j6pfs'];
+const pn=(b,g,i)=>b+'-'+H[g%H.length]+'-'+RN[(g*2+(i||0))%RN.length];
+function fmtAge(sec){sec=Math.max(0,Math.round(sec));if(sec<120)return sec+'s';if(sec<3600){const m=Math.floor(sec/60),r=sec%60;return m+'m'+(r?r+'s':'')}const h=Math.floor(sec/3600),m=Math.floor(sec%3600/60);return h+'h'+(m?m+'m':'')}
+function tbl(head,rows){const all=[head].concat(rows);const w=head.map((_,i)=>Math.max.apply(null,all.map(r=>String(r[i]==null?'':r[i]).length)));return all.map(r=>r.map((c,i)=>i===r.length-1?String(c):String(c).padEnd(w[i]+3)).join('')).join('\n')}
+function kv(rows){const w=Math.max.apply(null,rows.map(r=>r[0].length).concat([3]));const L=[['Key','Value'],['---','-----']].concat(rows);return L.map(r=>r[0].padEnd(w+4)+r[1]).join('\n')}
+function tokenize(str){const out=[];let cur='',has=false,q=null;for(let i=0;i<str.length;i++){const ch=str[i];if(q){if(ch===q)q=null;else cur+=ch}else if(ch==='"'||ch==="'"){q=ch;has=true}else if(/\s/.test(ch)){if(has||cur){out.push(cur);cur='';has=false}}else if(ch==='\\'&&i+1<str.length){cur+=str[++i];has=true}else{cur+=ch;has=true}}if(has||cur)out.push(cur);return out}
+function splitTop(str,seps){const parts=[];let cur='',q=null;for(let i=0;i<str.length;i++){const ch=str[i];if(q){cur+=ch;if(ch===q)q=null;continue}if(ch==='"'||ch==="'"){q=ch;cur+=ch;continue}let hit=null;for(const sp of seps){if(str.startsWith(sp,i)){hit=sp;break}}if(hit==='|'&&str[i+1]==='|')hit=null;if(hit){parts.push(cur);cur='';i+=hit.length-1;continue}cur+=ch}parts.push(cur);return parts}
+const KIND={pod:'pod',pods:'pod',po:'pod',deploy:'deploy',deployment:'deploy',deployments:'deploy','deployment.apps':'deploy','deployments.apps':'deploy',svc:'svc',service:'svc',services:'svc',ep:'ep',endpoints:'ep',endpoint:'ep',event:'events',events:'events',ev:'events',node:'node',nodes:'node',no:'node',secret:'secret',secrets:'secret',ns:'ns',namespace:'ns',namespaces:'ns',cm:'cm',configmap:'cm',configmaps:'cm',all:'all',rs:'rs',replicaset:'rs',replicasets:'rs',pvc:'pvc',persistentvolumeclaim:'pvc',persistentvolumeclaims:'pvc'};
+const KINDNAME={pod:'pods',deploy:'deployments.apps',svc:'services',secret:'secrets',node:'nodes'};
+function parseRes(arr){const r={kind:null,kindRaw:null,name:null,rest:[]};if(!arr.length)return r;let a=arr.slice();const f=a.shift();if(f.indexOf('/')>0){const k=f.split('/')[0].toLowerCase();r.kindRaw=k;r.kind=KIND[k]||k;r.name=f.split('/').slice(1).join('/')}else{r.kindRaw=f.toLowerCase();r.kind=KIND[r.kindRaw]||(r.kindRaw.indexOf(',')>0?r.kindRaw:r.kindRaw);if(a.length&&a[0].indexOf('=')<0&&a[0][0]!=='-'){r.name=a.shift()}}r.rest=a;return r}
+function parseFlags(tokens,verb){const valued=new Set(['-n','--namespace','-o','--output','-c','--container','--type','--patch','--from-literal','--cert','--key','--requests','--limits','--tail','-l','--selector','-f','--filename','--image','--replicas','--field-selector','-L','--set','--set-string','--values','--version','--timeout','--since','--revision']);if(verb==='patch')valued.add('-p');const flags={},pos=[];let after=null;for(let i=0;i<tokens.length;i++){const t=tokens[i];if(t==='--'){after=tokens.slice(i+1);break}if(t[0]==='-'&&t.length>1&&!/^-\d/.test(t)){let k=t,v=true;if(t.indexOf('=')>0&&t.slice(0,2)==='--'){k=t.slice(0,t.indexOf('='));v=t.slice(t.indexOf('=')+1)}else if(valued.has(t)){v=tokens[++i];if(v===undefined)v=''}else if(/^-o./.test(t)&&t[1]==='o'&&t[2]!=='-'){k='-o';v=t.slice(2)}k=k.replace(/^-+/,'');if(k==='set'&&flags.set&&typeof v==='string')flags.set=flags.set+','+v;else flags[k]=v}else pos.push(t)}if(flags.namespace)flags.n=flags.namespace;if(flags.output)flags.o=flags.output;if(flags.selector)flags.l=flags.selector;return{flags,pos,after}}
+function splitEnv(tokens){const env={};let i=0;if(tokens[0]==='env'){i=1;while(i<tokens.length&&/^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[i])){const j=tokens[i].indexOf('=');env[tokens[i].slice(0,j)]=tokens[i].slice(j+1);i++}}return{env,rest:tokens.slice(i)}}
+function podDesc(p,o){const age=fmtAge(p.age);const L=[
+'Name:             '+p.name,'Namespace:        lab','Priority:         0','Service Account:  default',
+'Node:             '+(o.noNode?'<none>':'kcna-lab-control-plane/172.18.0.2'),
+'Start Time:       '+(o.noNode?'<none>':'Mon, 02 Nov 2026 02:11:04 +0000'),
+'Labels:           '+p.labels,'Annotations:      <none>',
+'Status:           '+(o.phase||'Running'),'IP:               '+(p.ip||''),'Controlled By:    ReplicaSet/'+p.name.replace(/-[a-z0-9]{5}$/,''),
+'Containers:',o.container,'Conditions:','  Type              Status','  Initialized       True','  Ready             '+(p.ready.split('/')[0]===p.ready.split('/')[1]?'True':'False'),'  PodScheduled      '+(o.noNode?'False':'True')];
+if(o.volumes)L.push('Volumes:',o.volumes);
+L.push('QoS Class:       '+(o.qos||'BestEffort'),'Node-Selectors:  <none>','Tolerations:     node.kubernetes.io/not-ready:NoExecute op=Exists for 300s','Events:','  Type     Reason   Age   From     Message','  ----     ------   ----  ----     -------');
+o.events.forEach(e=>L.push('  '+e[0].padEnd(9)+e[1].padEnd(9)+e[2].padEnd(6)+e[3].padEnd(9)+e[4]));return L.join('\n')}
+const SYS_PODS=[['coredns-7db6d8ff4d-9kq2z','1/1','Running','0','1h'],['coredns-7db6d8ff4d-wm5tb','1/1','Running','0','1h'],['etcd-kcna-lab-control-plane','1/1','Running','0','1h'],['kindnet-xk8v2','1/1','Running','0','1h'],['kube-apiserver-kcna-lab-control-plane','1/1','Running','0','1h'],['kube-controller-manager-kcna-lab-control-plane','1/1','Running','0','1h'],['kube-proxy-7zq4d','1/1','Running','0','1h'],['kube-scheduler-kcna-lab-control-plane','1/1','Running','0','1h']];
+
+/* ================= engine ================= */
+const SC={};
+function def(id,o){o.id=id;SC[id]=o}
+const Sim={sc:null,s:null,hints:0,sol:false,startT:0,endT:0,done:false};
+Sim.start=function(id){Sim.sc=SC[id];Sim.s=Object.assign({tick:0,gen:0},Sim.sc.init());Sim.hints=0;Sim.sol=false;Sim.startT=Date.now();Sim.endT=0;Sim.done=false};
+Sim.points=function(){return Sim.sol?0:Math.max(0,3-Sim.hints)};
+Sim.hint=function(){const h=Sim.sc.hints;if(Sim.hints>=h.length)return'No more hints. Try the Solution button.';Sim.hints++;return'Hint '+Sim.hints+'/'+h.length+': '+h[Sim.hints-1]};
+Sim.check=function(){const ok=Sim.sc.fixed(Sim.s);if(ok&&!Sim.done){Sim.done=true;Sim.endT=Date.now()}return ok};
+Sim.exec=function(line){
+  line=line.trim();if(!line)return{out:''};
+  const lc=line.toLowerCase();
+  if(lc==='help'||lc==='?')return{out:HELP};
+  if(lc==='clear')return{clear:true};
+  if(lc==='hint')return{out:Sim.hint(),hint:true};
+  if(lc==='check')return{check:true};
+  if(lc==='brief')return{out:Sim.sc.brief};
+  if(lc==='solution')return{solution:true};
+  if(lc==='quit'||lc==='menu'||lc==='exit')return{quit:true};
+  let outs=[],edit=null;
+  const segs=splitTop(line,['&&',';']);
+  for(const seg of segs){const r=runPipeline(seg.trim());if(r.edit)edit=r.edit;if(r.out!=='')outs.push(r.out)}
+  Sim.s.tick++;if(Sim.sc.onTick)Sim.sc.onTick(Sim.s);
+  return{out:outs.join('\n'),edit};
+};
+const HELP=`Supported in this simulator:
+  kubectl get|describe|logs|exec|edit|patch|set|create|delete|rollout|config ...
+     (-n lab, -o wide|yaml|name|jsonpath, --show-labels, -l, -A, --previous)
+  helm list|status|get values|history|upgrade
+  vault is NOT installed locally: run it inside the pod with kubectl exec ... -- vault ...
+  echo, base64 -d, grep, openssl, and pipes (|), && and ;
+Game commands: hint, check, brief, solution, clear, menu`;
+function runPipeline(str){
+  const stages=splitTop(str,['|']).map(x=>x.trim());
+  let r=runCmd(stages[0]);if(r.edit)return r;
+  let out=r.out;
+  for(let i=1;i<stages.length;i++)out=runFilter(stages[i],out);
+  return{out};
+}
+function runFilter(st,input){
+  const t=tokenize(st);const c=t[0];
+  if(c==='grep'){let inv=false,ic=false,pat=null;t.slice(1).forEach(x=>{if(x==='-v')inv=true;else if(x==='-i')ic=true;else if(x[0]!=='-'&&pat===null)pat=x});if(pat===null)return'usage: grep [-iv] PATTERN';let re;try{re=new RegExp(pat,ic?'i':'')}catch(e){re=new RegExp(pat.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),ic?'i':'')}return input.split('\n').filter(l=>re.test(l)!==inv).join('\n')}
+  if(c==='base64'){if(t.some(x=>x==='-d'||x==='--decode'||x==='-D')){try{return atob(input.replace(/\s+/g,''))}catch(e){return'base64: invalid input'}}return btoa(input)}
+  if(c==='wc'){return String(input===''?0:input.split('\n').length)}
+  if(c==='head'||c==='tail'){let n=10;const i=t.indexOf('-n');if(i>0)n=parseInt(t[i+1],10)||10;const L=input.split('\n');return(c==='head'?L.slice(0,n):L.slice(-n)).join('\n')}
+  return'bash: '+c+': command not found';
+}
+function runCmd(str){
+  const t=tokenize(str);if(!t.length)return{out:''};
+  const c=t[0];
+  if(c==='kubectl'||c==='k')return kubectl(t.slice(1));
+  if(c==='helm')return{out:Sim.sc.helm?helm(t.slice(1)):'Error: no Helm releases in this scenario (the helm-tls scenario uses Helm).'};
+  if(c==='echo')return{out:t.slice(1).join(' ')};
+  if(c==='openssl')return{out:Sim.sc.openssl?Sim.sc.openssl(Sim.s,t):'bash: openssl: not needed in this scenario'};
+  if(c==='pwd')return{out:'/home/player'};
+  if(c==='whoami')return{out:'player'};
+  if(c==='vault')return{out:'bash: vault: command not found\n(the vault CLI lives inside the Vault pod: use kubectl exec ... -- vault ...)'};
+  if(c==='base64'){return{out:'base64: pipe something into it, e.g. echo ABC= | base64 -d'}}
+  return{out:'bash: '+c+': command not found'};
+}
+function kubectl(tokens){
+  const sc=Sim.sc,s=Sim.s;const verb=tokens[0];
+  if(!verb)return{out:'kubectl controls the Kubernetes cluster manager. Type help.'};
+  const pf=parseFlags(tokens.slice(1),verb);const flags=pf.flags;
+  const c={verb,flags,pos:pf.pos,after:pf.after,o:flags.o,patchStr:flags.patch||flags.p||'',r:null,sub:null};
+  if(verb==='set'){c.sub=pf.pos[0];c.r=parseRes(pf.pos.slice(1))}else c.r=parseRes(pf.pos);
+  const ns=flags.n;
+  switch(verb){
+  case'version':return{out:'Client Version: v1.30.0\nKustomize Version: v5.0.4\nServer Version: v1.30.0'};
+  case'cluster-info':return{out:'Kubernetes control plane is running at https://127.0.0.1:34567\nCoreDNS is running at https://127.0.0.1:34567/api/v1/namespaces/kube-system/services/kube-dns:dns/proxy'};
+  case'config':{const sub=pf.pos[0];if(sub==='current-context')return{out:'kind-kcna-lab'};if(sub==='get-contexts')return{out:'CURRENT   NAME            CLUSTER         AUTHINFO        NAMESPACE\n*         kind-kcna-lab   kind-kcna-lab   kind-kcna-lab   lab'};if(sub==='set-context'||sub==='use-context')return{out:'Context "kind-kcna-lab" modified.'};return{out:'(simulator) supported: kubectl config current-context | get-contexts'}}
+  case'top':return{out:'error: Metrics API not available'};
+  case'get':return{out:kget(c,ns,flags)};
+  case'describe':return{out:kdescribe(c,ns)};
+  case'logs':return{out:klogs(c)};
+  case'exec':return kexec(c);
+  case'edit':return kedit(c);
+  case'rollout':return{out:krollout(c)};
+  case'delete':return{out:kdelete(c)};
+  case'create':return{out:kcreate(c)};
+  case'set':case'patch':case'annotate':case'label':case'scale':case'apply':case'replace':case'expose':case'run':case'cordon':case'drain':case'taint':{
+    if(verb==='apply'||verb==='replace'||verb==='run'||verb==='expose')return{out:'(simulator) manifests and new objects are not supported here. Use set, patch or edit on the existing objects.'};
+    if(c.r.kind==='deploy'&&c.r.name&&!sc.deploys(s).some(d=>d.name===c.r.name))return{out:'Error from server (NotFound): deployments.apps "'+c.r.name+'" not found'};
+    const res=sc.cmd?sc.cmd(s,c):undefined;
+    if(res!==undefined)return{out:res};
+    return{out:'(simulator) that change did not match anything fixable in this scenario. Check the object name and syntax.'};}
+  default:return{out:'error: unknown or unsupported command "'+verb+'" in the simulator. Type help.'};
+  }
+}
+function filterLabels(list,sel){if(!sel||sel===true)return list;const parts=String(sel).split(',');return list.filter(p=>parts.every(x=>p.labels.split(',').indexOf(x)>=0))}
+function kget(c,ns,flags){
+  const sc=Sim.sc,s=Sim.s,r=c.r,o=c.o;
+  if(!r.kindRaw)return'You must specify the type of resource to get. Use "kubectl api-resources" for a complete list of supported resources.';
+  if(ns&&ns!=='lab'&&!flags.A)return'No resources found in '+ns+' namespace.';
+  const kinds=r.kindRaw.indexOf(',')>0?r.kindRaw.split(','):[r.kind];
+  const outs=kinds.map(k=>kgetOne(KIND[k]||k,r,o,flags,kinds.length>1));
+  return outs.join('\n\n');
+}
+function kgetOne(kind,r,o,flags,multi){
+  const sc=Sim.sc,s=Sim.s;
+  const nameErr=(plural)=>'Error from server (NotFound): '+plural+' "'+r.name+'" not found';
+  if(kind==='all'){return'NAME\n'+sc.pods(s).map(p=>'pod/'+p.name).join('\n')+'\n\n'+sc.svcs(s).map(x=>'service/'+x.name).join('\n')+'\n\n'+sc.deploys(s).map(d=>'deployment.apps/'+d.name).join('\n')}
+  if(kind==='pod'){
+    let list=sc.pods(s);if(flags.l)list=filterLabels(list,flags.l);
+    if(r.name&&!multi){list=list.filter(p=>p.name===r.name);if(!list.length)return nameErr('pods')}
+    if(o==='name')return list.map(p=>'pod/'+p.name).join('\n');
+    if(o==='yaml'&&list.length)return podYaml(list[0]);
+    if(flags.A||flags['all-namespaces']){const rows=SYS_PODS.map(p=>['kube-system'].concat(p)).concat(list.map(p=>['lab',p.name,p.ready,p.status,String(p.restarts),fmtAge(p.age)]));return tbl(['NAMESPACE','NAME','READY','STATUS','RESTARTS','AGE'],rows)}
+    if(!list.length)return'No resources found in lab namespace.';
+    const wide=o==='wide',sl=flags['show-labels'];
+    const head=['NAME','READY','STATUS','RESTARTS','AGE'].concat(wide?['IP','NODE']:[]).concat(sl?['LABELS']:[]);
+    return tbl(head,list.map(p=>[p.name,p.ready,p.status,String(p.restarts),fmtAge(p.age)].concat(wide?[p.ip||'<none>',p.ip?'kcna-lab-control-plane':'<none>']:[]).concat(sl?[p.labels]:[])));
+  }
+  if(kind==='deploy'){
+    let list=sc.deploys(s);if(r.name){list=list.filter(d=>d.name===r.name);if(!list.length)return nameErr('deployments.apps')}
+    if(o==='yaml'||o==='json'){const ob=sc.objects&&sc.objects['deploy/'+list[0].name];return ob?ob.yaml(s):'(simulator) yaml not available'}
+    if(o==='name')return list.map(d=>'deployment.apps/'+d.name).join('\n');
+    return tbl(['NAME','READY','UP-TO-DATE','AVAILABLE','AGE'],list.map(d=>[d.name,d.ready,String(d.up),String(d.avail),fmtAge(d.age)]));
+  }
+  if(kind==='svc'){
+    let list=sc.svcs(s);if(r.name){list=list.filter(d=>d.name===r.name);if(!list.length)return nameErr('services')}
+    if(!list.length)return'No resources found in lab namespace.';
+    if(o==='yaml'||o==='json'){const ob=sc.objects&&sc.objects['svc/'+list[0].name];return ob?ob.yaml(s):'(simulator) yaml not available'}
+    const wide=o==='wide';
+    return tbl(['NAME','TYPE','CLUSTER-IP','EXTERNAL-IP','PORT(S)','AGE'].concat(wide?['SELECTOR']:[]),list.map(x=>[x.name,'ClusterIP',x.ip,'<none>',x.ports,fmtAge(x.age)].concat(wide?[x.selector]:[])));
+  }
+  if(kind==='ep'){
+    const rows=sc.endpoints(s);let list=rows;if(r.name){list=rows.filter(d=>d.name===r.name);if(!list.length)return nameErr('endpoints')}
+    if(!list.length)return'No resources found in lab namespace.';
+    return tbl(['NAME','ENDPOINTS','AGE'],list.map(e=>[e.name,e.eps,fmtAge(e.age)]));
+  }
+  if(kind==='events'){const ev=sc.events(s);if(!ev.length)return'No resources found in lab namespace.';return tbl(['LAST SEEN','TYPE','REASON','OBJECT','MESSAGE'],ev.map(e=>[e[2]||'30s',e[0],e[1],e[3],e[4]]))}
+  if(kind==='node'){return tbl(['NAME','STATUS','ROLES','AGE','VERSION'],[['kcna-lab-control-plane','Ready','control-plane','1h','v1.30.0']])}
+  if(kind==='ns'){return tbl(['NAME','STATUS','AGE'],[['default','Active','1h'],['kube-node-lease','Active','1h'],['kube-public','Active','1h'],['kube-system','Active','1h'],['lab','Active','10m']])}
+  if(kind==='secret'){
+    const list=sc.secrets?sc.secrets(s):[];
+    if(r.name){const sec=list.find(x=>x.name===r.name);if(!sec)return nameErr('secrets');
+      if(o==='yaml'||o==='json'){return'apiVersion: v1\ndata:\n'+Object.keys(sec.data).map(k=>'  '+k+': '+sec.data[k]).join('\n')+'\nkind: Secret\nmetadata:\n  name: '+sec.name+'\n  namespace: lab\ntype: '+sec.type}
+      if(o&&String(o).indexOf('jsonpath')===0){const m=/\.data\.(.+?)\}/.exec(String(o));if(!m)return Object.keys(sec.data).map(k=>sec.data[k]).join(' ');const key=Object.keys(sec.data).find(k=>m[1].replace(/\\/g,'')===k);return key?sec.data[key]:''}}
+    const l2=r.name?list.filter(x=>x.name===r.name):list;
+    if(!l2.length)return'No resources found in lab namespace.';
+    return tbl(['NAME','TYPE','DATA','AGE'],l2.map(x=>[x.name,x.type,String(Object.keys(x.data).length),fmtAge(x.age)]));
+  }
+  return'No resources found in lab namespace.';
+}
+function podYaml(p){return'apiVersion: v1\nkind: Pod\nmetadata:\n  labels:\n'+p.labels.split(',').map(x=>'    '+x.replace('=',': ')).join('\n')+'\n  name: '+p.name+'\n  namespace: lab\nstatus:\n  phase: '+(p.status==='Pending'||p.status==='ContainerCreating'?'Pending':'Running')+'\n  containerStatuses:\n  - ready: '+(p.ready.split('/')[0]===p.ready.split('/')[1])+'\n    restartCount: '+p.restarts}
+function kdescribe(c,ns){
+  const sc=Sim.sc,s=Sim.s,r=c.r;
+  if(!r.kind)return'You must specify the type of resource to describe.';
+  if(r.kind==='pod'){const pods=sc.pods(s);let list=r.name?pods.filter(p=>p.name===r.name):pods;if(c.flags.l)list=filterLabels(pods,c.flags.l);if(!list.length)return r.name?'Error from server (NotFound): pods "'+r.name+'" not found':'No resources found in lab namespace.';return list.map(p=>sc.describePod(s,p)).join('\n\n')}
+  if(r.kind==='deploy'||r.kind==='svc'){
+    const lst=r.kind==='deploy'?sc.deploys(s):sc.svcs(s);
+    if(!r.name)return lst.map(x=>'Name: '+x.name).join('\n');
+    if(!lst.some(x=>x.name===r.name))return'Error from server (NotFound): '+KINDNAME[r.kind]+' "'+r.name+'" not found';
+    if(sc.describeObj){const d=sc.describeObj(s,r.kind,r.name);if(d)return d}
+    const ob=sc.objects&&sc.objects[r.kind+'/'+r.name];return ob?ob.yaml(s):'(simulator) not available';
+  }
+  if(r.kind==='node')return'Name:               kcna-lab-control-plane\nRoles:              control-plane\nCapacity:\n  cpu:                4\n  memory:             8139000Ki\n  pods:               110\nAllocatable:\n  cpu:                4\n  memory:             8139000Ki\n  pods:               110\nAllocated resources:\n  Resource           Requests     Limits\n  cpu                950m (23%)   100m (2%)\n  memory             290Mi (3%)   390Mi (4%)';
+  if(r.kind==='secret'){const sec=(sc.secrets?sc.secrets(s):[]).find(x=>x.name===r.name);if(!sec)return'Error from server (NotFound): secrets "'+r.name+'" not found';return'Name:         '+sec.name+'\nNamespace:    lab\nType:         '+sec.type+'\n\nData\n====\n'+Object.keys(sec.data).map(k=>k+':  '+atobSafe(sec.data[k]).length+' bytes').join('\n')}
+  return'(simulator) describe is supported for pod, deploy, svc, node, secret.';
+}
+function atobSafe(b){try{return atob(b)}catch(e){return b}}
+function resolvePod(c){
+  const sc=Sim.sc,s=Sim.s,r=c.r,pods=sc.pods(s);
+  if(r.kind==='deploy'&&r.name){return pods.find(p=>p.name.indexOf(r.name+'-')===0)||null}
+  if(r.kind==='pod'&&r.name)return pods.find(p=>p.name===r.name)||null;
+  if(r.kindRaw&&!r.name)return pods.find(p=>p.name===r.kindRaw)||null;
+  if(c.flags.l){return filterLabels(pods,c.flags.l)[0]||null}
+  return null;
+}
+function klogs(c){
+  const sc=Sim.sc,s=Sim.s;
+  if(!c.r.kindRaw&&!c.flags.l)return'error: expected \'logs [-f] [-p] (POD | TYPE/NAME) [-c CONTAINER]\'.\nPOD or TYPE/NAME is a required argument for the logs command';
+  const p=resolvePod(c);if(!p)return'Error from server (NotFound): pods "'+(c.r.name||c.r.kindRaw)+'" not found';
+  return sc.logs(s,p,!!(c.flags.previous||c.flags.p));
+}
+function kexec(c){
+  const sc=Sim.sc,s=Sim.s;
+  if(c.flags.it||c.flags.i||c.flags.t){ if(!c.after||!c.after.length)return{out:'(simulator) interactive shells are not supported. Run the command directly after --, e.g. kubectl exec deploy/vault -- ls'} }
+  if(!c.after||!c.after.length)return{out:'error: you must specify at least one command for the container'};
+  if(/^(\/bin\/)?(ba)?sh$/.test(c.after[0]))return{out:'(simulator) interactive shells are not supported. Run the command directly after --, e.g. kubectl exec deploy/vault -- vault status'};
+  if(!sc.exec)return{out:'error: unable to upgrade connection: container not found'};
+  const p=resolvePod(c);if(!p)return{out:'Error from server (NotFound): pods "'+(c.r.name||c.r.kindRaw||'')+'" not found'};
+  return{out:sc.exec(s,p,c.after)};
+}
+function kedit(c){
+  const sc=Sim.sc,s=Sim.s,r=c.r;
+  if(!r.kind||!r.name)return{out:'error: you must specify the resource to edit, e.g. kubectl edit deploy/vault'};
+  const ob=sc.objects&&sc.objects[r.kind+'/'+r.name];
+  if(!ob)return{out:'Error from server (NotFound): '+(KINDNAME[r.kind]||r.kind)+' "'+r.name+'" not found'};
+  const before=ob.yaml(s);
+  return{out:'',edit:{title:'kubectl edit '+r.kind+'/'+r.name,yaml:before,onSave:(txt)=>{if(txt.trim()===before.trim())return'Edit cancelled, no changes made.';const res=ob.apply(s,txt);return res||((r.kind==='deploy'?'deployment.apps/':'service/')+r.name+' edited')}}};
+}
+function krollout(c){
+  const sc=Sim.sc,s=Sim.s,sub=c.pos[0];const r=parseRes(c.pos.slice(1));
+  const d=sc.deploys(s).find(x=>x.name===r.name);
+  if(!d)return r.name?'Error from server (NotFound): deployments.apps "'+r.name+'" not found':'error: required resource not specified';
+  if(sub==='status'){const [a,b]=d.ready.split('/');return a===b?'deployment "'+d.name+'" successfully rolled out':'Waiting for deployment "'+d.name+'" rollout to finish: '+a+' of '+b+' updated replicas are available...\n(a real kubectl would keep waiting here; press Ctrl+C)'}
+  if(sub==='restart'){s.gen++;if(sc.onRestart)sc.onRestart(s);return'deployment.apps/'+d.name+' restarted'}
+  return'(simulator) supported: rollout status | restart';
+}
+function kdelete(c){
+  const sc=Sim.sc,s=Sim.s,r=c.r;
+  if(r.kind==='pod'){const pods=sc.pods(s);const list=c.flags.all?pods:pods.filter(p=>p.name===r.name);if(!list.length)return'Error from server (NotFound): pods "'+(r.name||'')+'" not found';s.gen++;if(sc.onRestart)sc.onRestart(s);return list.map(p=>'pod "'+p.name+'" deleted').join('\n')}
+  return'error: the simulator blocks deleting that resource (it would break the lab). Fix it with set / patch / edit instead.';
+}
+function kcreate(c){
+  const sc=Sim.sc,s=Sim.s;
+  if(c.pos[0]==='secret'&&sc.createSecret)return sc.createSecret(s,c);
+  return'(simulator) create is only supported for secrets in scenarios that need them.';
+}
+/* ================= scenarios ================= */
+const cpuM=v=>/m$/.test(v)?parseFloat(v):parseFloat(v)*1000;
+const memMi=v=>{const n=parseFloat(v);if(/Gi?$/.test(v))return n*1024;if(/Ki?$/.test(v))return n/1024;if(/Mi?$/.test(v))return n;return n/1048576};
+const lab=s=>20*s.tick;
+
+/* 1 ---------------------------------------------------------- crashloop */
+def('crashloop',{
+ title:'Checkout API keeps restarting',level:'Easy',
+ brief:'The "checkout" deployment in namespace lab never becomes Ready. Pods restart repeatedly.\nGoal: get 2/2 replicas Running and Ready.',
+ hints:['kubectl get pods, then look at the STATUS and RESTARTS columns.','kubectl logs <pod> (add --previous if it already restarted).','The app needs an environment variable. How do you set one on a Deployment? (kubectl set env ...)'],
+ solution:'kubectl set env deploy/checkout DB_URL=postgres://db:5432/app\n(or kubectl edit deploy/checkout and add an env entry)',
+ init:()=>({db:null,fixAt:0}),
+ fixed:s=>!!s.db,
+ pods(s){const ok=!!s.db;return[0,1].map(i=>({name:pn('checkout',s.gen,i),ready:ok?'1/1':'0/1',status:ok?'Running':'CrashLoopBackOff',restarts:ok?0:3+Math.floor(s.tick/2),age:ok?20+(s.tick-s.fixAt)*20:260+lab(s),labels:'app=checkout,pod-template-hash='+H[s.gen%H.length],ip:'10.244.0.'+(5+i)}))},
+ deploys(s){const ok=!!s.db;return[{name:'checkout',ready:ok?'2/2':'0/2',up:2,avail:ok?2:0,age:260+lab(s)}]},
+ svcs:()=>[],endpoints:()=>[],
+ events(s){return s.db?[['Normal','Started','20s','pod/'+pn('checkout',s.gen,0),'Started container web']]:[['Warning','BackOff','10s','pod/'+pn('checkout',s.gen,0),'Back-off restarting failed container web in pod '+pn('checkout',s.gen,0)],['Normal','Pulled','1m','pod/'+pn('checkout',s.gen,1),'Container image "busybox:1.36" already present on machine']]},
+ describePod(s,p){const ok=!!s.db;return podDesc(p,{container:'  web:\n    Image:          busybox:1.36\n    Command:\n      sh\n      -c\n      test -n "$DB_URL" || { echo \'DB_URL is required\' >&2; exit 1; }; echo up; sleep 3600\n'+(ok?'    State:          Running\n':'    State:          Waiting\n      Reason:       CrashLoopBackOff\n    Last State:     Terminated\n      Reason:       Error\n      Exit Code:    1\n')+'    Ready:          '+(ok?'True':'False')+'\n    Restart Count:  '+p.restarts+'\n    Environment:    '+(ok?'\n      DB_URL:  '+s.db:'<none>'),events:ok?[['Normal','Started','20s','kubelet','Started container web']]:[['Normal','Pulled','2m','kubelet','Container image "busybox:1.36" already present on machine'],['Normal','Created','2m','kubelet','Created container web'],['Warning','BackOff','10s','kubelet','Back-off restarting failed container web in pod '+p.name]]})},
+ logs:(s,p)=>s.db?'up':'DB_URL is required',
+ objects:{'deploy/checkout':{yaml:s=>'apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: checkout\n  namespace: lab\nspec:\n  replicas: 2\n  selector:\n    matchLabels:\n      app: checkout\n  template:\n    spec:\n      containers:\n      - name: web\n        image: busybox:1.36\n'+(s.db?'        env:\n        - name: DB_URL\n          value: '+s.db+'\n':''),
+  apply(s,t){const m=/name:\s*DB_URL\s*\n\s*value:\s*(\S+)/.exec(t);if(!m)return'error: no DB_URL env found in the edited manifest; nothing changed';s.db=m[1].replace(/["']/g,'');s.gen++;s.fixAt=s.tick}}},
+ cmd(s,c){
+  if(c.verb==='set'&&c.sub==='env'&&c.r.kind==='deploy'){const a=c.r.rest.find(x=>/^DB_URL=./.test(x));if(!a)return'error: set env needs VAR=value (the app wants DB_URL)';s.db=a.slice(7);s.gen++;s.fixAt=s.tick;return'deployment.apps/checkout env updated'}
+  if(c.verb==='patch'){const m=/DB_URL[^]*?"value"\s*:\s*"([^"]+)"/.exec(c.patchStr);if(m){s.db=m[1];s.gen++;s.fixAt=s.tick;return'deployment.apps/checkout patched'}}
+ }
+});
+
+/* 2 ---------------------------------------------------------- imagepull */
+const GOOD_TAGS=['1.27-alpine','1.27','1.26','1.25-alpine','1.25','latest','alpine','stable'];
+const imgOk=s=>GOOD_TAGS.indexOf((s.image||'').replace(/^nginx:/,''))>=0&&/^nginx:/.test(s.image);
+def('imagepull',{
+ title:'New release stuck at ErrImagePull',level:'Easy',
+ brief:'The "web" deployment in namespace lab was just updated and its pods cannot start.\nGoal: 2/2 replicas Ready.',
+ hints:['kubectl describe pod <pod> and read the Events section at the bottom.','The image tag does not exist. Which image field is wrong?','Use kubectl set image deploy/web nginx=<image> or kubectl edit deploy/web. Valid tags include 1.27-alpine.'],
+ solution:'kubectl set image deploy/web nginx=nginx:1.27-alpine',
+ init:()=>({image:'nginx:1.27-alpine-typo',fixAt:0}),
+ fixed:s=>imgOk(s),
+ pods(s){const ok=imgOk(s);return[0,1].map(i=>({name:pn('web',s.gen,i),ready:ok?'1/1':'0/1',status:ok?'Running':((s.tick+i)%2?'ErrImagePull':'ImagePullBackOff'),restarts:0,age:ok?20+(s.tick-s.fixAt)*20:90+lab(s),labels:'app=web,pod-template-hash='+H[s.gen%H.length],ip:ok?'10.244.0.'+(5+i):''}))},
+ deploys(s){const ok=imgOk(s);return[{name:'web',ready:ok?'2/2':'0/2',up:2,avail:ok?2:0,age:90+lab(s)}]},
+ svcs:()=>[],endpoints:()=>[],
+ events(s){return imgOk(s)?[['Normal','Started','20s','pod/'+pn('web',s.gen,0),'Started container nginx']]:[['Warning','Failed','15s','pod/'+pn('web',s.gen,0),'Failed to pull image "'+s.image+'": manifest unknown'],['Normal','BackOff','10s','pod/'+pn('web',s.gen,0),'Back-off pulling image "'+s.image+'"']]},
+ describePod(s,p){const ok=imgOk(s);return podDesc(p,{container:'  nginx:\n    Image:          '+s.image+'\n    State:          '+(ok?'Running':'Waiting\n      Reason:       '+p.status)+'\n    Ready:          '+(ok?'True':'False')+'\n    Restart Count:  0',events:ok?[['Normal','Started','20s','kubelet','Started container nginx']]:[['Normal','Scheduled','90s','default-scheduler','Successfully assigned lab/'+p.name+' to kcna-lab-control-plane'],['Normal','Pulling','60s','kubelet','Pulling image "'+s.image+'"'],['Warning','Failed','58s','kubelet','Failed to pull image "'+s.image+'": rpc error: code = NotFound desc = failed to pull and unpack image: manifest unknown'],['Warning','Failed','58s','kubelet','Error: ErrImagePull'],['Normal','BackOff','30s','kubelet','Back-off pulling image "'+s.image+'"'],['Warning','Failed','30s','kubelet','Error: ImagePullBackOff']]})},
+ logs:(s,p)=>imgOk(s)?'/docker-entrypoint.sh: Configuration complete; ready for start up':'Error from server (BadRequest): container "nginx" in pod "'+p.name+'" is waiting to start: trying and failing to pull image',
+ objects:{'deploy/web':{yaml:s=>'apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: web\n  namespace: lab\nspec:\n  replicas: 2\n  selector:\n    matchLabels:\n      app: web\n  template:\n    spec:\n      containers:\n      - name: nginx\n        image: '+s.image+'\n',
+  apply(s,t){const m=/image:\s*(\S+)/.exec(t);if(!m)return'error: no image found';s.image=m[1];s.gen++;s.fixAt=s.tick}}},
+ cmd(s,c){
+  if(c.verb==='set'&&c.sub==='image'&&c.r.kind==='deploy'){const a=c.r.rest.find(x=>x.indexOf('=')>0);if(!a)return'error: set image needs container=image';const k=a.slice(0,a.indexOf('=')),img=a.slice(a.indexOf('=')+1);if(k!=='nginx'&&k!=='*')return'error: unable to find container named "'+k+'"';s.image=img;s.gen++;s.fixAt=s.tick;return'deployment.apps/web image updated'}
+  if(c.verb==='patch'){const m=/"image"\s*:\s*"([^"]+)"/.exec(c.patchStr);if(m){s.image=m[1];s.gen++;s.fixAt=s.tick;return'deployment.apps/web patched'}}
+ }
+});
+
+/* 3 ---------------------------------------------------------- pending */
+const pendOk=s=>cpuM(s.cpu)<=2000&&memMi(s.mem)<=4096;
+def('pending',{
+ title:'Batch worker stays Pending',level:'Easy',
+ brief:'The "worker" deployment in namespace lab has a pod that never gets scheduled.\nGoal: the pod is Running.',
+ hints:['kubectl describe pod <pod>: what does the scheduler event say?','Compare the resource requests with what kubectl describe node shows as allocatable.','Lower the requests (e.g. cpu 100m, memory 64Mi): kubectl set resources deploy/worker --requests=cpu=100m,memory=64Mi'],
+ solution:'kubectl set resources deploy/worker --requests=cpu=100m,memory=64Mi',
+ init:()=>({cpu:'64',mem:'512Gi',fixAt:0}),
+ fixed:s=>pendOk(s),
+ pods(s){const ok=pendOk(s);return[{name:pn('worker',s.gen,0),ready:ok?'1/1':'0/1',status:ok?'Running':'Pending',restarts:0,age:ok?20+(s.tick-s.fixAt)*20:75+lab(s),labels:'app=worker,pod-template-hash='+H[s.gen%H.length],ip:ok?'10.244.0.5':''}]},
+ deploys(s){const ok=pendOk(s);return[{name:'worker',ready:ok?'1/1':'0/1',up:1,avail:ok?1:0,age:75+lab(s)}]},
+ svcs:()=>[],endpoints:()=>[],
+ events(s){return pendOk(s)?[['Normal','Started','20s','pod/'+pn('worker',s.gen,0),'Started container w']]:[['Warning','FailedScheduling','20s','pod/'+pn('worker',s.gen,0),'0/1 nodes are available: 1 Insufficient cpu, 1 Insufficient memory. preemption: 0/1 nodes are available: 1 No preemption victims found for incoming pod.']]},
+ describePod(s,p){const ok=pendOk(s);return podDesc(p,{noNode:!ok,phase:ok?'Running':'Pending',container:'  w:\n    Image:      busybox:1.36\n    Command:    sleep 3600\n    State:      '+(ok?'Running':'Waiting\n      Reason:   PodInitializing')+'\n    Requests:\n      cpu:        '+s.cpu+'\n      memory:     '+s.mem+'\n    Ready:      '+(ok?'True':'False'),events:ok?[['Normal','Started','20s','kubelet','Started container w']]:[['Warning','FailedScheduling','75s','default-scheduler','0/1 nodes are available: 1 Insufficient cpu, 1 Insufficient memory. preemption: 0/1 nodes are available: 1 No preemption victims found for incoming pod.']]})},
+ logs:(s,p)=>pendOk(s)?'':'Error from server (BadRequest): container "w" in pod "'+p.name+'" is waiting to start: ContainerCreating',
+ objects:{'deploy/worker':{yaml:s=>'apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: worker\n  namespace: lab\nspec:\n  replicas: 1\n  template:\n    spec:\n      containers:\n      - name: w\n        image: busybox:1.36\n        resources:\n          requests:\n            cpu: "'+s.cpu+'"\n            memory: '+s.mem+'\n',
+  apply(s,t){const c=/cpu:\s*"?([0-9.]+m?)"?/.exec(t),m=/memory:\s*"?([0-9.]+[KMG]i?)"?/.exec(t);if(!c||!m)return'error: could not read cpu/memory from the edited manifest';s.cpu=c[1];s.mem=m[1];s.gen++;s.fixAt=s.tick}}},
+ cmd(s,c){
+  if(c.verb==='set'&&c.sub==='resources'&&c.r.kind==='deploy'){const req=c.flags.requests;if(typeof req!=='string')return'error: use --requests=cpu=100m,memory=64Mi';const cp=/cpu=([0-9.]+m?)/.exec(req),mm=/memory=([0-9.]+[KMG]i?)/.exec(req);if(cp)s.cpu=cp[1];if(mm)s.mem=mm[1];s.gen++;s.fixAt=s.tick;return'deployment.apps/worker resource requests updated'}
+  if(c.verb==='patch'){const cp=/"cpu"\s*:\s*"([^"]+)"/.exec(c.patchStr),mm=/"memory"\s*:\s*"([^"]+)"/.exec(c.patchStr);if(cp||mm){if(cp)s.cpu=cp[1];if(mm)s.mem=mm[1];s.gen++;s.fixAt=s.tick;return'deployment.apps/worker patched'}}
+ }
+});
+
+/* 4 ---------------------------------------------------------- service-selector */
+def('service-selector',{
+ title:'Service has no endpoints',level:'Easy',
+ brief:'Pods for "api" are Running, but the Service "api" in namespace lab returns nothing.\nGoal: "kubectl get endpoints api" lists both pod IPs on port 80.',
+ hints:['kubectl get endpoints api is empty. Compare kubectl get pods --show-labels with the Service selector (kubectl get svc api -o wide).','The selector label does not match the pods. Also check targetPort against what nginx listens on (80).','kubectl edit svc api, or kubectl patch svc api -p \'{"spec":{...}}\''],
+ solution:'kubectl patch svc api --type merge -p \'{"spec":{"selector":{"app":"api"},"ports":[{"port":80,"targetPort":80}]}}\'',
+ init:()=>({sel:'api-server',tport:8080}),
+ fixed:s=>s.sel==='api'&&s.tport===80,
+ pods(s){return[0,1].map(i=>({name:pn('api',s.gen,i),ready:'1/1',status:'Running',restarts:0,age:150+lab(s),labels:'app=api,pod-template-hash='+H[s.gen%H.length],ip:'10.244.0.'+(5+i)}))},
+ deploys(s){return[{name:'api',ready:'2/2',up:2,avail:2,age:150+lab(s)}]},
+ svcs(s){return[{name:'api',ip:'10.96.142.77',ports:'80/TCP',age:150+lab(s),selector:'app='+s.sel}]},
+ endpoints(s){return[{name:'api',eps:s.sel==='api'?'10.244.0.5:'+s.tport+',10.244.0.6:'+s.tport:'<none>',age:150+lab(s)}]},
+ events:()=>[],
+ describePod(s,p){return podDesc(p,{container:'  nginx:\n    Image:          nginx:1.27-alpine\n    Port:           <none>\n    State:          Running\n    Ready:          True\n    Restart Count:  0',events:[['Normal','Started','2m','kubelet','Started container nginx']]})},
+ logs:(s,p)=>'/docker-entrypoint.sh: Configuration complete; ready for start up\n10.244.0.1 - - "GET / HTTP/1.1" 200 615',
+ describeObj(s,kind,name){if(kind!=='svc')return null;return'Name:              api\nNamespace:         lab\nLabels:            app=api\nSelector:          app='+s.sel+'\nType:              ClusterIP\nIP:                10.96.142.77\nPort:              <unset>  80/TCP\nTargetPort:        '+s.tport+'/TCP\nEndpoints:         '+(s.sel==='api'?'10.244.0.5:'+s.tport+',10.244.0.6:'+s.tport:'<none>')+'\nSession Affinity:  None'},
+ objects:{'svc/api':{yaml:s=>'apiVersion: v1\nkind: Service\nmetadata:\n  name: api\n  namespace: lab\nspec:\n  clusterIP: 10.96.142.77\n  ports:\n  - port: 80\n    protocol: TCP\n    targetPort: '+s.tport+'\n  selector:\n    app: '+s.sel+'\n  type: ClusterIP\n',
+  apply(s,t){const m=/selector:\s*\n\s*app:\s*(\S+)/.exec(t),p=/targetPort:\s*(\d+)/.exec(t);if(m)s.sel=m[1];if(p)s.tport=parseInt(p[1],10)}},
+  'deploy/api':{yaml:s=>'apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: api\n  namespace: lab\nspec:\n  replicas: 2\n  selector:\n    matchLabels:\n      app: api\n  template:\n    spec:\n      containers:\n      - name: nginx\n        image: nginx:1.27-alpine\n',apply:()=>'(simulator) nothing to fix on the Deployment'}},
+ cmd(s,c){
+  if(c.verb==='set'&&c.sub==='selector'&&c.r.kind==='svc'){const a=c.r.rest.find(x=>/^app=/.test(x));if(!a)return'error: usage: kubectl set selector svc api app=<value>';s.sel=a.slice(4);return'service/api selector updated'}
+  if(c.verb==='patch'&&c.r.kind==='svc'){let j;try{j=JSON.parse(c.patchStr)}catch(e){return'error: unable to parse patch as JSON: '+c.patchStr}const sp=j.spec||{};let ch=false;if(sp.selector&&sp.selector.app){s.sel=sp.selector.app;ch=true}if(sp.ports&&sp.ports[0]&&sp.ports[0].targetPort!==undefined){s.tport=parseInt(sp.ports[0].targetPort,10);ch=true}return ch?'service/api patched':'service/api patched (no change)'}
+ }
+});
+
+/* shared Vault CLI bits */
+const KEYS=['q7Vn3xT0uJ2mD9bLr5Wc8YfH1aEoKsZp4NgXtRiM6vU=','eB5yQ0hCwJ9sLzT3kPnA7dFmXuR2oVgI8cYb1ZqN4tM=','Hs8Uo2LdXr6WvNc0yTqE5mBgJ1zKpA9fIiR3aZtY7bM='];
+const ROOT='hvs.CAESIFakeLabRootToken0123456789';
+const INIT_TXT='Unseal Key 1: '+KEYS[0]+'\nUnseal Key 2: '+KEYS[1]+'\nUnseal Key 3: '+KEYS[2]+'\n\nInitial Root Token: '+ROOT+'\n\nVault initialized with 3 key shares and a key threshold of 2. Please securely\ndistribute the key shares printed above. When the Vault is re-sealed,\nrestarted, or stopped, you must supply at least 2 of these keys to unseal it\nbefore it can start servicing requests.\n';
+function vaultStatus(s,store){const rows=[['Seal Type','shamir'],['Initialized','true'],['Sealed',String(s.sealed)],['Total Shares','3'],['Threshold','2']];
+ if(s.sealed){rows.push(['Unseal Progress',(s.progress.length)+'/2'],['Unseal Nonce',s.progress.length?'8f3c1e0a-5d2b-4f7e-9a61-c2d4b8e07f13':'n/a'])}
+ rows.push(['Version','1.17.2'],['Build Date','2024-07-05T15:19:12Z'],['Storage Type',store||'file']);
+ if(!s.sealed)rows.push(['Cluster Name','vault-cluster-4a1b7c9d'],['Cluster ID','b7e2a1c4-0d3f-9e58-6b21-7f4c8a9d1e33']);
+ rows.push(['HA Enabled','false']);return kv(rows)}
+function vaultEnvOk(env){return !env.VAULT_ADDR||/^http:\/\/(127\.0\.0\.1|localhost|0\.0\.0\.0):8200\/?$/.test(env.VAULT_ADDR)}
+const ADDR_OK=['http://vault:8200','http://vault.lab:8200','http://vault.lab.svc:8200','http://vault.lab.svc.cluster.local:8200'];
+
+/* 5 ---------------------------------------------------------- vault-secrets */
+def('vault-secrets',{
+ title:'App cannot read its secret from Vault',level:'Medium',
+ brief:'Vault (dev mode) runs in namespace lab as Service "vault". The "billing" app should read secret/billing and log GOT SECRET, but its logs show errors.\nTip: the Vault pod has the CLI; the root token is "root". Run it with:\n  kubectl exec deploy/vault -- env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=root vault <cmd>\nGoal: "kubectl logs deploy/billing" ends with GOT SECRET.',
+ hints:['kubectl logs deploy/billing. The first problem is network: does the host in VAULT_ADDR exist? (kubectl get svc)','Fix VAULT_ADDR with kubectl set env deploy/billing VAULT_ADDR=... The next error means the secret path is empty.','Write it: kubectl exec deploy/vault -- env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=root vault kv put secret/billing api_key=abc123'],
+ solution:'kubectl set env deploy/billing VAULT_ADDR=http://vault:8200\nkubectl exec deploy/vault -- env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=root vault kv put secret/billing api_key=abc123',
+ init:()=>({addr:'http://vault-server:8200',kv:false,bgen:0}),
+ fixed:s=>ADDR_OK.indexOf(s.addr)>=0&&s.kv,
+ pods(s){return[{name:pn('vault',0,0),ready:'1/1',status:'Running',restarts:0,age:400+lab(s),labels:'app=vault,pod-template-hash='+H[0],ip:'10.244.0.5'},{name:pn('billing',s.bgen,1),ready:'1/1',status:'Running',restarts:0,age:s.bgen?20:400+lab(s),labels:'app=billing,pod-template-hash='+H[s.bgen%H.length],ip:'10.244.0.6'}]},
+ deploys(s){return[{name:'billing',ready:'1/1',up:1,avail:1,age:400+lab(s)},{name:'vault',ready:'1/1',up:1,avail:1,age:400+lab(s)}]},
+ svcs(s){return[{name:'vault',ip:'10.96.88.14',ports:'8200/TCP',age:400+lab(s),selector:'app=vault'}]},
+ endpoints(s){return[{name:'vault',eps:'10.244.0.5:8200',age:400+lab(s)}]},
+ events:()=>[],
+ describePod(s,p){const b=p.name.indexOf('billing')===0;return podDesc(p,{container:b?'  app:\n    Image:          curlimages/curl:8.8.0\n    State:          Running\n    Ready:          True\n    Restart Count:  0\n    Environment:\n      VAULT_ADDR:   '+s.addr+'\n      VAULT_TOKEN:  root':'  vault:\n    Image:          hashicorp/vault:1.17\n    Port:           8200/TCP\n    State:          Running\n    Ready:          True\n    Restart Count:  0\n    Environment:\n      VAULT_DEV_ROOT_TOKEN_ID:       root\n      VAULT_DEV_LISTEN_ADDRESS:      0.0.0.0:8200',events:[['Normal','Started','6m','kubelet','Started container '+(b?'app':'vault')]]})},
+ logs(s,p){
+  if(p.name.indexOf('vault')===0)return'==> Vault server configuration:\n\n             Api Address: http://0.0.0.0:8200\n                     Cgo: disabled\n         Listener 1: tcp (addr: "0.0.0.0:8200", tls: "disabled")\n              Storage: inmem\n\nWARNING! dev mode is enabled! In this mode, Vault runs entirely in-memory\nand starts unsealed with a single unseal key.\n\nRoot Token: root';
+  if(ADDR_OK.indexOf(s.addr)<0)return Array(4).fill('cannot reach '+s.addr).join('\n');
+  return s.kv?Array(4).fill('GOT SECRET').join('\n'):Array(4).fill('no secret: {"errors":[]}').join('\n')},
+ objects:{'deploy/billing':{yaml:s=>'apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: billing\n  namespace: lab\nspec:\n  template:\n    spec:\n      containers:\n      - name: app\n        image: curlimages/curl:8.8.0\n        env:\n        - name: VAULT_ADDR\n          value: '+s.addr+'\n        - name: VAULT_TOKEN\n          value: root\n',
+  apply(s,t){const m=/name:\s*VAULT_ADDR\s*\n\s*value:\s*(\S+)/.exec(t);if(m){s.addr=m[1].replace(/["']/g,'');s.bgen++}}}},
+ cmd(s,c){
+  if(c.verb==='set'&&c.sub==='env'&&c.r.kind==='deploy'){if(c.r.name!=='billing')return'error: this scenario only needs changes on deploy/billing';const a=c.r.rest.find(x=>/^VAULT_ADDR=./.test(x));if(!a)return'error: set env needs VAR=value';s.addr=a.slice(11);s.bgen++;return'deployment.apps/billing env updated'}
+ },
+ exec(s,p,after){
+  const e=splitEnv(after),t=e.rest;
+  if(p.name.indexOf('billing')===0){if(t[0]==='curl'){const url=t.find(x=>/^https?:\/\//.test(x))||'';const host=(/^https?:\/\/([^:\/]+)/.exec(url)||[])[1]||'';if(!host)return'curl: try a URL, e.g. curl -s http://vault:8200/v1/sys/health';if(['vault','vault.lab','vault.lab.svc','vault.lab.svc.cluster.local'].indexOf(host)<0)return'curl: (6) Could not resolve host: '+host;if(/sys\/health/.test(url))return'{"initialized":true,"sealed":false,"standby":false,"version":"1.17.2"}';if(/secret\/data\/billing/.test(url))return s.kv?'{"data":{"data":{"api_key":"abc123"},"metadata":{"version":1}}}':'{"errors":[]}';return'{"errors":["no handler for route"]}'}if(t[0]==='env'||t[0]==='printenv')return'VAULT_ADDR='+s.addr+'\nVAULT_TOKEN=root';return'(simulator) try: curl, env'}
+  if(t[0]!=='vault')return'(simulator) run the vault CLI here, e.g. vault status';
+  if(!vaultEnvOk(e.env))return'Get "'+e.env.VAULT_ADDR+'/v1/sys/seal-status": dial tcp: connection refused';
+  const a=t.slice(1);
+  if(a[0]==='status')return vaultStatus({sealed:false,progress:[]},'inmem');
+  if(a[0]==='kv'&&a[1]==='put'){if(e.env.VAULT_TOKEN!=='root')return'Error making API request.\n\nURL: PUT http://127.0.0.1:8200/v1/secret/data/billing\nCode: 403. Errors:\n\n* permission denied';if(a[2]!=='secret/billing'&&a[2]!=='-mount=secret')return'(simulator) the app reads secret/billing, write to that path';const kvp=a.slice(3).filter(x=>x.indexOf('=')>0&&x[0]!=='-');if(!kvp.length)return'Must supply data';s.kv=true;return'======== Secret Path ========\nsecret/data/billing\n\n======= Metadata =======\n'+kv([['created_time','2026-11-02T02:15:41.123456Z'],['custom_metadata','<nil>'],['deletion_time','n/a'],['destroyed','false'],['version','1']])}
+  if(a[0]==='kv'&&a[1]==='get'){if(!s.kv)return'No value found at secret/data/billing';return'======== Secret Path ========\nsecret/data/billing\n\n====== Data ======\n'+kv([['api_key','abc123']])}
+  return'(simulator) supported: vault status | vault kv put secret/billing k=v | vault kv get secret/billing'}
+});
+
+/* 6 ---------------------------------------------------------- vault-sealed */
+function vFix(s){if(!s.probeFixed){s.probeFixed=true;s.gen++;s.restarts=0;s.sealed=true;s.progress=[]}}
+def('vault-sealed',{
+ title:'Vault keeps sealing itself',level:'Hard',
+ brief:'Vault (server mode, file storage on a PVC) runs in namespace lab as Deployment/Service "vault".\nApps report "Vault is sealed", and teammates say they unsealed it earlier but it locked again.\nThe unseal keys from initialization were saved in Secret "vault-init" (threshold: 2 of 3 keys).\nTip: run vault commands with:\n  kubectl exec deploy/vault -- env VAULT_ADDR=http://127.0.0.1:8200 vault <cmd>\nGoal: Vault is unsealed AND stays that way (no more restarts).',
+ hints:['kubectl get pods: check READY and RESTARTS. Then vault status (see the Sealed field).','The keys are in Secret vault-init: kubectl get secret vault-init -o jsonpath=\'{.data.init\\.txt}\' | base64 -d','Run vault operator unseal <key> twice with two different Unseal Keys.','It re-sealed because the container restarted. kubectl describe pod and read the Events: what is failing?','The liveness probe checks port 8201 (cluster port) but the API listens on 8200. kubectl edit deploy/vault, then unseal again after the rollout.'],
+ solution:'1. Fix the restarts: kubectl edit deploy/vault and change livenessProbe httpGet port 8201 -> 8200\n2. Read the keys: kubectl get secret vault-init -o jsonpath=\'{.data.init\\.txt}\' | base64 -d\n3. Unseal twice (new pod is sealed after the rollout):\n   kubectl exec deploy/vault -- env VAULT_ADDR=http://127.0.0.1:8200 vault operator unseal <key1>\n   kubectl exec deploy/vault -- env VAULT_ADDR=http://127.0.0.1:8200 vault operator unseal <key2>\nLesson: Vault seals on every restart unless auto-unseal is configured. Find out WHY it restarts, not just how to unseal.',
+ init:()=>({sealed:true,progress:[],restarts:2,probeFixed:false,tick:0}),
+ onTick(s){if(!s.probeFixed&&s.tick>0&&s.tick%7===0){s.restarts++;s.sealed=true;s.progress=[]}},
+ onRestart(s){s.restarts=0;s.sealed=true;s.progress=[]},
+ fixed:s=>!s.sealed&&s.probeFixed,
+ pods(s){return[{name:pn('vault',s.gen,0),ready:s.sealed?'0/1':'1/1',status:'Running',restarts:s.restarts,age:s.probeFixed?20+lab(s):300+lab(s),labels:'app=vault,pod-template-hash='+H[s.gen%H.length],ip:'10.244.0.7'}]},
+ deploys(s){return[{name:'vault',ready:s.sealed?'0/1':'1/1',up:1,avail:s.sealed?0:1,age:300+lab(s)}]},
+ svcs:(s)=>[{name:'vault',ip:'10.96.201.9',ports:'8200/TCP',age:300+lab(s),selector:'app=vault'}],
+ endpoints(s){return[{name:'vault',eps:s.sealed?'<none>':'10.244.0.7:8200',age:300+lab(s)}]},
+ events(s){const p='pod/'+pn('vault',s.gen,0);return s.probeFixed?[['Normal','Started','20s',p,'Started container vault']]:[['Warning','Unhealthy','8s',p,'Liveness probe failed: Get "http://10.244.0.7:8201/v1/sys/health?sealedcode=200&uninitcode=200": dial tcp 10.244.0.7:8201: connect: connection refused'],['Normal','Killing','8s',p,'Container vault failed liveness probe, will be restarted'],['Warning','Unhealthy','5s',p,'Readiness probe failed: HTTP probe failed with statuscode: 503']]},
+ describePod(s,p){const port=s.probeFixed?8200:8201;return podDesc(p,{container:'  vault:\n    Image:          hashicorp/vault:1.17\n    Port:           8200/TCP\n    State:          Running\n'+(s.restarts?'    Last State:     Terminated\n      Reason:       Completed\n      Exit Code:    0\n':'')+'    Ready:          '+(s.sealed?'False':'True')+'\n    Restart Count:  '+s.restarts+'\n    Liveness:       http-get http://:'+port+'/v1/sys/health?sealedcode=200&uninitcode=200 delay=45s timeout=1s period=10s #success=1 #failure=2\n    Readiness:      http-get http://:8200/v1/sys/health delay=0s timeout=1s period=5s #success=1 #failure=3\n    Mounts:\n      /vault/file from data (rw)',volumes:'  data:\n    Type:       PersistentVolumeClaim (a reference to a PersistentVolumeClaim in the same namespace)\n    ClaimName:  vault-data',events:s.probeFixed?[['Normal','Started','20s','kubelet','Started container vault']]:[['Normal','Created','2m','kubelet','Created container vault'],['Normal','Started','2m','kubelet','Started container vault'],['Warning','Unhealthy','50s','kubelet','Liveness probe failed: Get "http://10.244.0.7:8201/v1/sys/health?sealedcode=200&uninitcode=200": dial tcp 10.244.0.7:8201: connect: connection refused'],['Normal','Killing','50s','kubelet','Container vault failed liveness probe, will be restarted'],['Warning','Unhealthy','5s','kubelet','Readiness probe failed: HTTP probe failed with statuscode: 503']]})},
+ logs(s,p,prev){
+  const base='==> Vault server configuration:\n\n             Api Address: http://0.0.0.0:8200\n              Listener 1: tcp (addr: "0.0.0.0:8200", tls: "disabled")\n                 Storage: file\n                 Version: Vault v1.17.2\n\n==> Vault server started! Log data will stream in below:\n';
+  if(prev)return base+'[INFO]  core: security barrier initialized: stored=1 shares=3 threshold=2\n[INFO]  core: post-unseal setup complete\n[INFO]  core: marked as sealed\n==> Vault shutdown triggered\n[INFO]  core: pre-seal teardown complete';
+  return base+'[INFO]  core: seal configuration loaded: type=shamir\n[INFO]  core: vault is sealed'+(s.sealed?'':'\n[INFO]  core: successfully unsealed with stored key(s)\n[INFO]  core: post-unseal setup complete')},
+ secrets:()=>[{name:'vault-init',type:'Opaque',data:{'init.txt':btoa(INIT_TXT)},age:300}],
+ objects:{'deploy/vault':{yaml:s=>'apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: vault\n  namespace: lab\nspec:\n  replicas: 1\n  strategy:\n    type: Recreate\n  template:\n    spec:\n      containers:\n      - name: vault\n        image: hashicorp/vault:1.17\n        ports:\n        - containerPort: 8200\n        readinessProbe:\n          httpGet:\n            path: /v1/sys/health\n            port: 8200\n          periodSeconds: 5\n        livenessProbe:\n          httpGet:\n            path: /v1/sys/health?sealedcode=200&uninitcode=200\n            port: '+(s.probeFixed?8200:8201)+'\n          initialDelaySeconds: 45\n          periodSeconds: 10\n          failureThreshold: 2\n',
+  apply(s,t){const m=/livenessProbe:[^]*?port:\s*(\d+)/.exec(t);if(!m)return'error: livenessProbe not found';if(m[1]==='8200'){vFix(s);return'deployment.apps/vault edited (new pod rolling out: it starts SEALED)'}return'deployment.apps/vault edited (liveness port is still '+m[1]+')'}}},
+ cmd(s,c){
+  if(c.verb==='patch'&&/liveness/i.test(c.patchStr)&&/8200/.test(c.patchStr)){vFix(s);return'deployment.apps/vault patched'}
+ },
+ exec(s,p,after){
+  const e=splitEnv(after),t=e.rest;
+  if(t[0]!=='vault')return'(simulator) run the vault CLI here, e.g. vault status';
+  if(!vaultEnvOk(e.env))return'Get "'+e.env.VAULT_ADDR+'/v1/sys/seal-status": dial tcp: connection refused';
+  const a=t.slice(1);
+  if(a[0]==='status')return vaultStatus(s);
+  if(a[0]==='operator'&&a[1]==='init')return'Error initializing: Error making API request.\n\nURL: PUT http://127.0.0.1:8200/v1/sys/init\nCode: 400. Errors:\n\n* Vault is already initialized';
+  if(a[0]==='operator'&&a[1]==='unseal'){
+   const key=a[2];if(!key)return'Unseal Key (will be hidden):\nError: the simulator cannot prompt for input. Pass the key as an argument: vault operator unseal <key>';
+   if(!s.sealed)return vaultStatus(s);
+   if(KEYS.indexOf(key)<0)return'Error unsealing: Error making API request.\n\nURL: PUT http://127.0.0.1:8200/v1/sys/unseal\nCode: 400. Errors:\n\n* failed to decrypt keys from barrier: cipher: message authentication failed';
+   if(s.progress.indexOf(key)<0)s.progress.push(key);
+   if(s.progress.length>=2){s.sealed=false;s.progress=[]}
+   return vaultStatus(s)}
+  if(s.sealed)return'Error making API request.\n\nURL: GET http://127.0.0.1:8200/v1/sys/internal/ui/mounts\nCode: 503. Errors:\n\n* Vault is sealed';
+  return'(simulator) supported: vault status | vault operator unseal <key>'}
+});
+
+/* 7 ---------------------------------------------------------- helm-tls */
+const effSecret=s=>s.setVals['tls.secretName']||'gateway-tls';
+def('helm-tls',{
+ title:'Helm release stuck: TLS secret not found',level:'Medium',
+ brief:'Helm release "gateway" (chart in ./chart) was installed into namespace lab. Its pod is stuck in ContainerCreating because it mounts a TLS secret.\nGoal: pod Running. Fix it through Helm and/or by creating the missing secret.',
+ hints:['kubectl describe pod <pod>: which secret is missing? helm get values gateway -n lab shows what was set.','Either create that secret (kubectl create secret tls NAME --cert=... --key=...) or change the value back with helm upgrade.','helm upgrade gateway ./chart -n lab --reuse-values --set tls.secretName=<name> (the secret must exist)'],
+ solution:'Option A (create the missing secret):\n  openssl req -x509 -nodes -newkey rsa:2048 -keyout /tmp/k -out /tmp/c -subj /CN=gateway -days 1\n  kubectl create secret tls gateway-tls-v2 --cert=/tmp/c --key=/tmp/k\nOption B: create gateway-tls the same way, then\n  helm upgrade gateway ./chart -n lab --set tls.secretName=gateway-tls',
+ init:()=>({setVals:{'tls.secretName':'gateway-tls-v2'},secrets:[],files:[],rev:1}),
+ fixed:s=>s.secrets.indexOf(effSecret(s))>=0,
+ pods(s){const ok=s.secrets.indexOf(effSecret(s))>=0;return[{name:pn('gateway',s.gen,0),ready:ok?'1/1':'0/1',status:ok?'Running':'ContainerCreating',restarts:0,age:ok?30+lab(s):120+lab(s),labels:'app=gateway,pod-template-hash='+H[s.gen%H.length],ip:ok?'10.244.0.5':''}]},
+ deploys(s){const ok=s.secrets.indexOf(effSecret(s))>=0;return[{name:'gateway',ready:ok?'1/1':'0/1',up:1,avail:ok?1:0,age:120+lab(s)}]},
+ svcs:()=>[],endpoints:()=>[],
+ events(s){const p='pod/'+pn('gateway',s.gen,0);return s.secrets.indexOf(effSecret(s))>=0?[['Normal','Started','10s',p,'Started container nginx']]:[['Warning','FailedMount','12s',p,'MountVolume.SetUp failed for volume "tls" : secret "'+effSecret(s)+'" not found']]},
+ describePod(s,p){const ok=s.secrets.indexOf(effSecret(s))>=0;return podDesc(p,{phase:ok?'Running':'Pending',container:'  nginx:\n    Image:          nginx:1.27-alpine\n    State:          '+(ok?'Running':'Waiting\n      Reason:       ContainerCreating')+'\n    Ready:          '+(ok?'True':'False')+'\n    Restart Count:  0\n    Mounts:\n      /etc/tls from tls (ro)',volumes:'  tls:\n    Type:        Secret (a volume populated by a Secret)\n    SecretName:  '+effSecret(s)+'\n    Optional:    false',events:ok?[['Normal','Started','10s','kubelet','Started container nginx']]:[['Normal','Scheduled','2m','default-scheduler','Successfully assigned lab/'+p.name+' to kcna-lab-control-plane'],['Warning','FailedMount','10s (x9 over 2m)','kubelet','MountVolume.SetUp failed for volume "tls" : secret "'+effSecret(s)+'" not found']]})},
+ logs:(s,p)=>s.secrets.indexOf(effSecret(s))>=0?'/docker-entrypoint.sh: Configuration complete; ready for start up':'Error from server (BadRequest): container "nginx" in pod "'+p.name+'" is waiting to start: ContainerCreating',
+ secrets:s=>s.secrets.map(n=>({name:n,type:'kubernetes.io/tls',data:{'tls.crt':btoa('CERT'),'tls.key':btoa('KEY')},age:30})),
+ openssl(s,t){const ko=t.indexOf('-keyout'),oo=t.indexOf('-out');if(ko<0||oo<0)return'(simulator) use -keyout <file> and -out <file> to write the key and certificate';s.files.push(t[ko+1],t[oo+1]);return'Generating a RSA private key\n..........................+++++\n......+++++\nwriting new private key to \''+t[ko+1]+'\'\n-----'},
+ createSecret(s,c){
+  const type=c.pos[1],name=c.pos[2];if(!name)return'error: exactly one NAME is required, got 0';
+  if(type==='tls'){const cert=c.flags.cert,key=c.flags.key;if(!cert||!key)return'error: failed to create secret: --cert and --key are required';for(const f of[cert,key])if(s.files.indexOf(f)<0)return'error: failed to load key pair open '+f+': no such file or directory (create it first with openssl)'}
+  else if(type!=='generic')return'(simulator) supported: create secret tls|generic NAME';
+  if(s.secrets.indexOf(name)>=0)return'Error from server (AlreadyExists): secrets "'+name+'" already exists';
+  s.secrets.push(name);return'secret/'+name+' created'},
+ objects:{'deploy/gateway':{yaml:s=>'apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: gateway\n  namespace: lab\nspec:\n  template:\n    spec:\n      containers:\n      - name: nginx\n        image: nginx:1.27-alpine\n        volumeMounts:\n        - name: tls\n          mountPath: /etc/tls\n          readOnly: true\n      volumes:\n      - name: tls\n        secret:\n          secretName: '+effSecret(s)+'\n',
+  apply(s,t){const m=/secretName:\s*(\S+)/.exec(t);if(m){s.setVals['tls.secretName']=m[1];s.gen++;return'deployment.apps/gateway edited (note: Helm will overwrite this on the next upgrade)'}}}},
+ cmd:()=>undefined,
+ helm:true
+});
+function helm(tokens){
+  const s=Sim.s;const sub=tokens[0];const pf=parseFlags(tokens.slice(1),'helm');const f=pf.flags;
+  const ts='2026-11-02 02:11:04.000000000 +0000 UTC';
+  if(f.n&&f.n!=='lab'&&!f.A)return sub==='list'||sub==='ls'?'NAME\tNAMESPACE\tREVISION\tUPDATED\tSTATUS\tCHART\tAPP VERSION':'Error: release: not found';
+  if(sub==='list'||sub==='ls')return tbl(['NAME','NAMESPACE','REVISION','UPDATED','STATUS','CHART','APP VERSION'],[['gateway','lab',String(s.rev),ts,'deployed','gateway-0.1.0','']]);
+  if(sub==='status')return'NAME: gateway\nLAST DEPLOYED: Mon Nov  2 02:11:04 2026\nNAMESPACE: lab\nSTATUS: deployed\nREVISION: '+s.rev;
+  if(sub==='history'){const rows=[];for(let i=1;i<=s.rev;i++)rows.push([String(i),ts,i===s.rev?'deployed':'superseded','gateway-0.1.0','',i===1?'Install complete':'Upgrade complete']);return tbl(['REVISION','UPDATED','STATUS','CHART','APP VERSION','DESCRIPTION'],rows)}
+  if(sub==='get'){const what=pf.pos[0];
+    if(what==='values'){if(f.a||f.all)return'COMPUTED VALUES:\ntls:\n  secretName: '+effSecret(s);const k=Object.keys(s.setVals);return'USER-SUPPLIED VALUES:\n'+(k.length?'tls:\n  secretName: '+s.setVals['tls.secretName']:'null')}
+    if(what==='manifest')return'---\n# Source: gateway/templates/deploy.yaml\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: gateway\nspec:\n  template:\n    spec:\n      volumes:\n      - name: tls\n        secret: {secretName: '+effSecret(s)+'}';
+    return'(simulator) supported: helm get values | manifest'}
+  if(sub==='upgrade'||sub==='install'){
+    if(pf.pos.length<2)return'Error: "helm upgrade" requires 2 arguments\n\nUsage:  helm upgrade [RELEASE] [CHART] [flags]';
+    if(pf.pos[0]!=='gateway')return'Error: "'+pf.pos[0]+'" has no deployed releases';
+    if(pf.pos[1].indexOf('/')<0&&pf.pos[1][0]!=='.')return'Error: repo '+pf.pos[1]+' not found';
+    const vals=f['reuse-values']?Object.assign({},s.setVals):{};
+    String(f.set||'').split(',').filter(Boolean).forEach(kvp=>{const i=kvp.indexOf('=');if(i>0)vals[kvp.slice(0,i)]=kvp.slice(i+1)});
+    s.setVals=vals;s.rev++;s.gen++;
+    return'Release "gateway" has been upgraded. Happy Helming!\nNAME: gateway\nLAST DEPLOYED: Mon Nov  2 02:20:41 2026\nNAMESPACE: lab\nSTATUS: deployed\nREVISION: '+s.rev}
+  return'(simulator) supported: helm list | status | history | get values | upgrade'}
+/* ================= UI ================= */
+const $=id=>document.getElementById(id);
+const ORDER=['crashloop','imagepull','pending','service-selector','vault-secrets','vault-sealed','helm-tls'];
+let results=[],timerH=null,hist=[],hi=0,curId=null;
+function lsGet(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}}
+function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
+results=lsGet('k8slab_results',[]);
+function who(){return($('name').value||'').trim()||'Player'}
+function fmtT(ms){const s=Math.floor(ms/1000);return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')}
+function bestFor(id){const r=results.filter(x=>x.id===id);return r.length?r.reduce((a,b)=>(b.points>a.points||(b.points===a.points&&b.ms<a.ms))?b:a):null}
+function renderMenu(){
+  $('name').value=lsGet('k8slab_name','');$('who').textContent='👤 '+who();
+  $('cards').innerHTML='';
+  ORDER.forEach(id=>{const sc=SC[id],b=bestFor(id);const d=document.createElement('div');d.className='card';
+    d.innerHTML='<h2></h2><p><span class="tag"></span> <span class="best"></span></p><button class="primary">Start</button>';
+    d.querySelector('h2').textContent=sc.title;d.querySelector('.tag').textContent=sc.level;
+    d.querySelector('.best').innerHTML=b?'<span class="done">✔ best '+b.points+' pts, '+fmtT(b.ms)+'</span>':'<small>not solved yet</small>';
+    d.querySelector('button').onclick=()=>startGame(id);$('cards').appendChild(d)});
+  const R=$('results');
+  if(!results.length){R.innerHTML='<small>No runs yet.</small>'}
+  else{let h='<table><tr><th>Scenario</th><th>Pts</th><th>Time</th><th>Hints</th><th>Who</th></tr>';results.slice(-15).reverse().forEach(r=>{h+='<tr><td>'+esc(SC[r.id]?SC[r.id].title:r.id)+'</td><td>'+r.points+'</td><td>'+fmtT(r.ms)+'</td><td>'+r.hints+(r.sol?' + solution':'')+'</td><td>'+esc(r.who)+'</td></tr>'});R.innerHTML=h+'</table>'}
+}
+function esc(x){return String(x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function print(txt,cls){const d=document.createElement('div');d.className=cls||'out';d.textContent=txt;$('term').appendChild(d);$('term').scrollTop=$('term').scrollHeight}
+function updPts(){$('pts').textContent=Sim.points()+' pts'}
+function startGame(id){
+  lsSet('k8slab_name',$('name').value);
+  Sim.start(id);curId=id;
+  $('menu').classList.add('hidden');$('game').classList.remove('hidden');$('timer').classList.remove('hidden');$('pts').classList.remove('hidden');
+  $('who').textContent='👤 '+who();$('gtitle').textContent=Sim.sc.title+' ('+Sim.sc.level+')';$('brief').textContent=Sim.sc.brief;
+  $('term').innerHTML='';$('win').classList.add('hidden');
+  print('Connected to context kind-kcna-lab, namespace lab. Type help for supported commands.','sys');
+  updPts();clearInterval(timerH);tick();timerH=setInterval(tick,500);$('cmd').value='';$('cmd').focus();
+}
+function tick(){const e=Sim.done?Sim.endT:Date.now();$('timer').textContent='⏱ '+fmtT(e-Sim.startT)}
+function backToMenu(){clearInterval(timerH);$('game').classList.add('hidden');$('menu').classList.remove('hidden');$('timer').classList.add('hidden');$('pts').classList.add('hidden');renderMenu()}
+function doCheck(){
+  if(Sim.done){print('Already solved. Back to the menu for the next one.','good');return}
+  if(Sim.check()){
+    const pts=Sim.points(),ms=Sim.endT-Sim.startT;
+    results.push({id:curId,points:pts,ms,hints:Sim.hints,sol:Sim.sol,who:who(),date:new Date().toISOString().slice(0,10)});lsSet('k8slab_results',results);
+    print('PASS: incident resolved! '+pts+' pts in '+fmtT(ms)+' (hints used: '+Sim.hints+(Sim.sol?', solution viewed':'')+')','good');
+    const idx=ORDER.indexOf(curId),nxt=ORDER[idx+1];
+    const w=$('win');w.classList.remove('hidden');w.innerHTML='<h2>✅ Resolved</h2><p>'+esc(Sim.sc.solution).replace(/\n/g,'<br>')+'</p><div class="btns"></div>';
+    const b=w.querySelector('.btns');
+    if(nxt){const n=document.createElement('button');n.className='primary';n.textContent='Next: '+SC[nxt].title;n.onclick=()=>startGame(nxt);b.appendChild(n)}
+    const m=document.createElement('button');m.textContent='Menu';m.onclick=backToMenu;b.appendChild(m);
+    updPts();
+  }else print('NOT YET: the incident is not resolved. Keep investigating (hint if you are stuck).','sys');
+}
+function submit(){
+  const line=$('cmd').value;$('cmd').value='';if(!line.trim())return;
+  hist.push(line);hi=hist.length;print('$ '+line,'cmd');
+  if(Sim.done&&!/^(menu|exit|quit|clear|help)$/i.test(line.trim())){print('Incident already resolved. Use the buttons below to continue.','sys');return}
+  const r=Sim.exec(line);
+  if(r.clear){$('term').innerHTML='';return}
+  if(r.quit){backToMenu();return}
+  if(r.hint){print(r.out,'sys');updPts();return}
+  if(r.check){doCheck();return}
+  if(r.solution){doSolution();return}
+  if(r.edit){openEditor(r.edit);return}
+  if(r.out!=='')print(r.out);
+}
+function doSolution(){if(!Sim.sol&&!Sim.done){if(!confirm('Viewing the solution sets this scenario to 0 points. Continue?'))return;Sim.sol=true;updPts()}print('SOLUTION:\n'+Sim.sc.solution,'sys')}
+function openEditor(ed){
+  $('etitle').textContent=ed.title;$('etext').value=ed.yaml;const dlg=$('editor');
+  const onClose=()=>{dlg.removeEventListener('close',onClose);if(dlg.returnValue==='save'){const res=ed.onSave($('etext').value);if(res)print(res)}else print('Edit cancelled, no changes made.');$('cmd').focus()};
+  dlg.addEventListener('close',onClose);dlg.returnValue='';
+  if(dlg.showModal)dlg.showModal();else{const t=prompt(ed.title,ed.yaml);if(t!==null){const res=ed.onSave(t);if(res)print(res)}dlg.removeEventListener('close',onClose)}
+}
+$('cmd').addEventListener('keydown',e=>{
+  if(e.key==='Enter')submit();
+  else if(e.key==='ArrowUp'){if(hi>0){hi--;$('cmd').value=hist[hi]}e.preventDefault()}
+  else if(e.key==='ArrowDown'){if(hi<hist.length-1){hi++;$('cmd').value=hist[hi]}else{hi=hist.length;$('cmd').value=''}e.preventDefault()}
+});
+$('bHint').onclick=()=>{if(Sim.done)return;print('$ hint','cmd');print(Sim.hint(),'sys');updPts();$('cmd').focus()};
+$('bCheck').onclick=()=>{print('$ check','cmd');doCheck()};
+$('bBrief').onclick=()=>{print('$ brief','cmd');print(Sim.sc.brief,'sys')};
+$('bSol').onclick=()=>{print('$ solution','cmd');doSolution()};
+$('bQuit').onclick=backToMenu;
+$('name').addEventListener('input',()=>{lsSet('k8slab_name',$('name').value);$('who').textContent='👤 '+who()});
+$('copyRes').onclick=()=>{
+  const lines=['K8s Troubleshooting Lab results for '+who()];let total=0;
+  ORDER.forEach(id=>{const b=bestFor(id);if(b){total+=b.points;lines.push('- '+SC[id].title+': '+b.points+' pts, '+fmtT(b.ms)+', hints '+b.hints+(b.sol?', solution viewed':''))}else lines.push('- '+SC[id].title+': not solved')});
+  lines.push('TOTAL: '+total+' / '+(ORDER.length*3)+' pts');const txt=lines.join('\n');
+  const done=()=>{$('copyRes').textContent='Copied!';setTimeout(()=>$('copyRes').textContent='Copy results to share with the team',1500)};
+  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(txt).then(done,()=>prompt('Copy:',txt));else prompt('Copy:',txt);
+};
+$('clearRes').onclick=()=>{if(confirm('Clear all saved results on this device?')){results=[];lsSet('k8slab_results',results);renderMenu()}};
+renderMenu();
+</script></body></html>

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>K8s Troubleshooting Lab</title>
+<style>
+:root{--bg:#f6f8fa;--card:#fff;--fg:#1d2733;--mut:#5b6b7b;--line:#d9e0e7;--acc:#326ce5;--ok:#1a7f37;--warn:#b35900;--term:#0d1117;--termfg:#d6dde5}
+@media (prefers-color-scheme:dark){:root{--bg:#0b0f14;--card:#141a21;--fg:#e4e9ee;--mut:#9aa8b6;--line:#2a3541;--acc:#6f9bff;--ok:#3fb950;--warn:#e3a008;--term:#05080b}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}
+.wrap{max-width:980px;margin:0 auto;padding:16px}
+header{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;margin-bottom:12px}
+h1{font-size:1.4rem;margin:0}h2{font-size:1.1rem;margin:0 0 8px}
+.pill{background:var(--card);border:1px solid var(--line);border-radius:99px;padding:2px 12px;font-variant-numeric:tabular-nums}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:8px;padding:6px 12px}
+button.primary{background:var(--acc);border-color:var(--acc);color:#fff}
+button:hover{filter:brightness(1.08)}
+input[type=text]{font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--fg)}
+.tag{font-size:.75rem;border:1px solid var(--line);border-radius:6px;padding:0 6px;color:var(--mut)}
+.done{color:var(--ok);font-weight:600}
+#brief{white-space:pre-wrap}
+#term{background:var(--term);color:var(--termfg);border-radius:10px;padding:12px;height:52vh;min-height:280px;overflow-y:auto;font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+#term .cmd{color:#7ee787;margin-top:8px}#term .out{white-space:pre;overflow-x:auto}#term .sys{color:#e3b341;white-space:pre-wrap}#term .good{color:#3fb950;white-space:pre-wrap;font-weight:700}
+.inrow{display:flex;gap:8px;margin:8px 0;align-items:center}
+.inrow span{font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--mut)}
+#cmd{flex:1;min-width:0;font-family:ui-monospace,Menlo,Consolas,monospace}
+.btns{display:flex;flex-wrap:wrap;gap:8px}
+table{border-collapse:collapse;width:100%;font-size:.9rem}th,td{border-bottom:1px solid var(--line);padding:4px 8px;text-align:left}
+dialog{width:min(700px,94vw);background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:10px}
+dialog textarea{width:100%;height:46vh;font:13px/1.4 ui-monospace,Menlo,Consolas,monospace;background:var(--term);color:var(--termfg);border:0;border-radius:8px;padding:8px}
+.hidden{display:none}
+small{color:var(--mut)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>☸ K8s Troubleshooting Lab</h1>
+  <div class="btns"><span class="pill" id="who"></span><span class="pill hidden" id="timer">0:00</span><span class="pill hidden" id="pts">3 pts</span></div>
+</header>
+
+<section id="menu">
+  <div class="card">
+    <h2>Welcome</h2>
+    <p>You are on call. Each scenario drops you into a broken cluster with a short incident brief. Diagnose it with real <code>kubectl</code>, <code>helm</code> and <code>vault</code> commands and fix it. Nothing here touches a real cluster, so you can't break anything. Everything runs in your browser, even offline.</p>
+    <p>Scoring: <b>3 points</b> per scenario, <b>-1 per hint</b>, <b>0</b> if you view the solution. Fastest time breaks ties.</p>
+    <label>Your name: <input type="text" id="name" maxlength="30" placeholder="e.g. Alex"></label>
+  </div>
+  <div class="grid" id="cards"></div>
+  <div class="card" style="margin-top:12px">
+    <h2>Your results</h2>
+    <div id="results"><small>No runs yet.</small></div>
+    <div class="btns" style="margin-top:8px"><button id="copyRes">Copy results to share with the team</button><button id="clearRes">Clear</button></div>
+  </div>
+</section>
+
+<section id="game" class="hidden">
+  <div class="card"><h2 id="gtitle"></h2><div id="brief"></div></div>
+  <div id="term" aria-live="polite"></div>
+  <div class="inrow"><span>$</span><input type="text" id="cmd" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="type a command, or help"></div>
+  <div class="btns">
+    <button id="bHint">💡 Hint (-1)</button><button class="primary" id="bCheck">✔ Check fix</button>
+    <button id="bBrief">📋 Brief</button><button id="bSol">🔓 Solution (0 pts)</button><button id="bQuit">⬅ Menu</button>
+  </div>
+  <div class="card hidden" id="win" style="margin-top:12px"></div>
+</section>
+</div>
+
+<dialog id="editor"><form method="dialog"><h2 id="etitle"></h2><textarea id="etext" spellcheck="false"></textarea>
+<div class="btns" style="margin-top:8px"><button value="save" class="primary" id="esave">Save</button><button value="cancel" id="ecancel">Cancel</button></div></form></dialog>

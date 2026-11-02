@@ -2,7 +2,9 @@
 
 A game for teams: a script breaks a real local cluster (kind), you diagnose and fix it with kubectl/helm/vault commands, and `check` tells you if the incident is resolved.
 
-Requires: docker, kind, kubectl (helm for `helm-tls`).
+**No install option:** open `simulator/k8s-troubleshooting-lab.html` in any browser (works offline, no cluster, same 7 scenarios, timer and scoring built in). Rebuild it after edits with `simulator/build.sh`.
+
+**Real cluster option** requires: docker, kind, kubectl (helm for `helm-tls`).
 
 ```
 ./lab.sh list                 # scenarios

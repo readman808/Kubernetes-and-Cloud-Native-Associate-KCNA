@@ -2,7 +2,10 @@
 
 Audience: team lead (facilitator) and players. Covers setup, running a session, per-scenario solutions, troubleshooting the lab itself, and cleanup.
 
-## 1. Prerequisites (each player)
+## 0. Fastest way to play (no install)
+Open `simulator/k8s-troubleshooting-lab.html` (double-click). It is a single offline file with a simulated terminal, all 7 scenarios, hints, timer, scoring and a results table with a Copy button for the team scoreboard. Players type real kubectl/helm/vault commands; output is scripted. Use sections 1+ only if you want the real kind cluster.
+
+## 1. Prerequisites (each player, real-cluster mode only)
 | Tool | Check | Notes |
 |---|---|---|
 | Docker | `docker ps` | Must be running. 4 GB RAM free recommended. |
